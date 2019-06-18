@@ -132,10 +132,18 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       } catch (e: EnumConstantNotFoundException) {
         // An unknown Enum value was encountered, store it as an unknown field.
         builder.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
+      } catch (e: TypeCastException) {
+        e.printStackTrace()
       }
 
     }
     reader.endMessage(token)
+    for (fieldBinding in fieldBindings.values) {
+      val binding = fieldBinding.getFromBuilder(builder)
+      if (binding == null) {
+        fieldBinding.defaultValue(builder)
+      }
+    }
 
     return builder.build()
   }
