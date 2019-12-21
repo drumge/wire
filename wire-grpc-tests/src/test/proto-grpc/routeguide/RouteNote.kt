@@ -7,21 +7,23 @@ import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.ProtoReader
 import com.squareup.wire.ProtoWriter
-import com.squareup.wire.TagHandler
 import com.squareup.wire.WireField
+import kotlin.Any
 import kotlin.AssertionError
+import kotlin.Boolean
 import kotlin.Deprecated
 import kotlin.DeprecationLevel
 import kotlin.Int
 import kotlin.Nothing
 import kotlin.String
+import kotlin.hashCode
 import kotlin.jvm.JvmField
 import okio.ByteString
 
 /**
  * A RouteNote is a message sent while at a given point.
  */
-data class RouteNote(
+class RouteNote(
   /**
    * The location from which the message is sent.
    */
@@ -38,15 +40,45 @@ data class RouteNote(
     adapter = "com.squareup.wire.ProtoAdapter#STRING"
   )
   val message: String? = null,
-  val unknownFields: ByteString = ByteString.EMPTY
+  unknownFields: ByteString = ByteString.EMPTY
 ) : Message<RouteNote, Nothing>(ADAPTER, unknownFields) {
   @Deprecated(
     message = "Shouldn't be used in Kotlin",
     level = DeprecationLevel.HIDDEN
   )
-  override fun newBuilder(): Nothing {
-    throw AssertionError()
+  override fun newBuilder(): Nothing = throw AssertionError()
+
+  override fun equals(other: Any?): Boolean {
+    if (other === this) return true
+    if (other !is RouteNote) return false
+    return unknownFields == other.unknownFields
+        && location == other.location
+        && message == other.message
   }
+
+  override fun hashCode(): Int {
+    var result = super.hashCode
+    if (result == 0) {
+      result = unknownFields.hashCode()
+      result = result * 37 + location.hashCode()
+      result = result * 37 + message.hashCode()
+      super.hashCode = result
+    }
+    return result
+  }
+
+  override fun toString(): String {
+    val result = mutableListOf<String>()
+    if (location != null) result += """location=$location"""
+    if (message != null) result += """message=$message"""
+    return result.joinToString(prefix = "RouteNote{", separator = ", ", postfix = "}")
+  }
+
+  fun copy(
+    location: Point? = this.location,
+    message: String? = this.message,
+    unknownFields: ByteString = this.unknownFields
+  ): RouteNote = RouteNote(location, message, unknownFields)
 
   companion object {
     @JvmField
@@ -72,7 +104,7 @@ data class RouteNote(
           when (tag) {
             1 -> location = Point.ADAPTER.decode(reader)
             2 -> message = ProtoAdapter.STRING.decode(reader)
-            else -> TagHandler.UNKNOWN_TAG
+            else -> reader.readUnknownField(tag)
           }
         }
         return RouteNote(

@@ -8,18 +8,20 @@ import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.ProtoReader
 import com.squareup.wire.ProtoWriter
-import com.squareup.wire.TagHandler
 import com.squareup.wire.WireEnum
 import com.squareup.wire.WireField
 import com.squareup.wire.internal.missingRequiredFields
 import com.squareup.wire.internal.redactElements
+import kotlin.Any
 import kotlin.AssertionError
+import kotlin.Boolean
 import kotlin.Deprecated
 import kotlin.DeprecationLevel
 import kotlin.Int
 import kotlin.Nothing
 import kotlin.String
 import kotlin.collections.List
+import kotlin.hashCode
 import kotlin.jvm.JvmField
 import kotlin.jvm.JvmStatic
 import okio.ByteString
@@ -27,7 +29,7 @@ import okio.ByteString
 /**
  * Message representing a person, includes their name, unique ID number, email and phone number.
  */
-data class Person(
+class Person(
   /**
    * The customer's full name.
    */
@@ -63,15 +65,53 @@ data class Person(
     label = WireField.Label.REPEATED
   )
   val phone: List<PhoneNumber> = emptyList(),
-  val unknownFields: ByteString = ByteString.EMPTY
+  unknownFields: ByteString = ByteString.EMPTY
 ) : Message<Person, Nothing>(ADAPTER, unknownFields) {
   @Deprecated(
     message = "Shouldn't be used in Kotlin",
     level = DeprecationLevel.HIDDEN
   )
-  override fun newBuilder(): Nothing {
-    throw AssertionError()
+  override fun newBuilder(): Nothing = throw AssertionError()
+
+  override fun equals(other: Any?): Boolean {
+    if (other === this) return true
+    if (other !is Person) return false
+    return unknownFields == other.unknownFields
+        && name == other.name
+        && id == other.id
+        && email == other.email
+        && phone == other.phone
   }
+
+  override fun hashCode(): Int {
+    var result = super.hashCode
+    if (result == 0) {
+      result = unknownFields.hashCode()
+      result = result * 37 + name.hashCode()
+      result = result * 37 + id.hashCode()
+      result = result * 37 + email.hashCode()
+      result = result * 37 + phone.hashCode()
+      super.hashCode = result
+    }
+    return result
+  }
+
+  override fun toString(): String {
+    val result = mutableListOf<String>()
+    result += """name=$name"""
+    result += """id=$id"""
+    if (email != null) result += """email=$email"""
+    if (phone.isNotEmpty()) result += """phone=$phone"""
+    return result.joinToString(prefix = "Person{", separator = ", ", postfix = "}")
+  }
+
+  fun copy(
+    name: String = this.name,
+    id: Int = this.id,
+    email: String? = this.email,
+    phone: List<PhoneNumber> = this.phone,
+    unknownFields: ByteString = this.unknownFields
+  ): Person = Person(name, id, email, phone, unknownFields)
 
   companion object {
     @JvmField
@@ -105,7 +145,7 @@ data class Person(
             2 -> id = ProtoAdapter.INT32.decode(reader)
             3 -> email = ProtoAdapter.STRING.decode(reader)
             4 -> phone.add(PhoneNumber.ADAPTER.decode(reader))
-            else -> TagHandler.UNKNOWN_TAG
+            else -> reader.readUnknownField(tag)
           }
         }
         return Person(
@@ -144,20 +184,20 @@ data class Person(
       val ADAPTER: ProtoAdapter<PhoneType> = object : EnumAdapter<PhoneType>(
         PhoneType::class
       ) {
-        override fun fromValue(value: Int): PhoneType = PhoneType.fromValue(value)
+        override fun fromValue(value: Int): PhoneType? = PhoneType.fromValue(value)
       }
 
       @JvmStatic
-      fun fromValue(value: Int): PhoneType = when (value) {
+      fun fromValue(value: Int): PhoneType? = when (value) {
         0 -> MOBILE
         1 -> HOME
         2 -> WORK
-        else -> throw IllegalArgumentException("""Unexpected value: $value""")
+        else -> null
       }
     }
   }
 
-  data class PhoneNumber(
+  class PhoneNumber(
     /**
      * The customer's phone number.
      */
@@ -174,18 +214,51 @@ data class Person(
       tag = 2,
       adapter = "com.squareup.wire.protos.person.kotlin.Person${'$'}PhoneType#ADAPTER"
     )
-    val type: PhoneType? = PhoneType.HOME,
-    val unknownFields: ByteString = ByteString.EMPTY
+    val type: PhoneType? = null,
+    unknownFields: ByteString = ByteString.EMPTY
   ) : Message<PhoneNumber, Nothing>(ADAPTER, unknownFields) {
     @Deprecated(
       message = "Shouldn't be used in Kotlin",
       level = DeprecationLevel.HIDDEN
     )
-    override fun newBuilder(): Nothing {
-      throw AssertionError()
+    override fun newBuilder(): Nothing = throw AssertionError()
+
+    override fun equals(other: Any?): Boolean {
+      if (other === this) return true
+      if (other !is PhoneNumber) return false
+      return unknownFields == other.unknownFields
+          && number == other.number
+          && type == other.type
     }
 
+    override fun hashCode(): Int {
+      var result = super.hashCode
+      if (result == 0) {
+        result = unknownFields.hashCode()
+        result = result * 37 + number.hashCode()
+        result = result * 37 + type.hashCode()
+        super.hashCode = result
+      }
+      return result
+    }
+
+    override fun toString(): String {
+      val result = mutableListOf<String>()
+      result += """number=$number"""
+      if (type != null) result += """type=$type"""
+      return result.joinToString(prefix = "PhoneNumber{", separator = ", ", postfix = "}")
+    }
+
+    fun copy(
+      number: String = this.number,
+      type: PhoneType? = this.type,
+      unknownFields: ByteString = this.unknownFields
+    ): PhoneNumber = PhoneNumber(number, type, unknownFields)
+
     companion object {
+      @JvmField
+      val DEFAULT_TYPE: PhoneType = PhoneType.HOME
+
       @JvmField
       val ADAPTER: ProtoAdapter<PhoneNumber> = object : ProtoAdapter<PhoneNumber>(
         FieldEncoding.LENGTH_DELIMITED, 
@@ -204,12 +277,16 @@ data class Person(
 
         override fun decode(reader: ProtoReader): PhoneNumber {
           var number: String? = null
-          var type: PhoneType = PhoneType.HOME
+          var type: PhoneType? = null
           val unknownFields = reader.forEachTag { tag ->
             when (tag) {
               1 -> number = ProtoAdapter.STRING.decode(reader)
-              2 -> type = PhoneType.ADAPTER.decode(reader)
-              else -> TagHandler.UNKNOWN_TAG
+              2 -> try {
+                type = PhoneType.ADAPTER.decode(reader)
+              } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
+                reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
+              }
+              else -> reader.readUnknownField(tag)
             }
           }
           return PhoneNumber(

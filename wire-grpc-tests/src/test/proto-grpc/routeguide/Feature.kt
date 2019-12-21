@@ -7,14 +7,16 @@ import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.ProtoReader
 import com.squareup.wire.ProtoWriter
-import com.squareup.wire.TagHandler
 import com.squareup.wire.WireField
+import kotlin.Any
 import kotlin.AssertionError
+import kotlin.Boolean
 import kotlin.Deprecated
 import kotlin.DeprecationLevel
 import kotlin.Int
 import kotlin.Nothing
 import kotlin.String
+import kotlin.hashCode
 import kotlin.jvm.JvmField
 import okio.ByteString
 
@@ -23,7 +25,7 @@ import okio.ByteString
  *
  * If a feature could not be named, the name is empty.
  */
-data class Feature(
+class Feature(
   /**
    * The name of the feature.
    */
@@ -40,15 +42,45 @@ data class Feature(
     adapter = "routeguide.Point#ADAPTER"
   )
   val location: Point? = null,
-  val unknownFields: ByteString = ByteString.EMPTY
+  unknownFields: ByteString = ByteString.EMPTY
 ) : Message<Feature, Nothing>(ADAPTER, unknownFields) {
   @Deprecated(
     message = "Shouldn't be used in Kotlin",
     level = DeprecationLevel.HIDDEN
   )
-  override fun newBuilder(): Nothing {
-    throw AssertionError()
+  override fun newBuilder(): Nothing = throw AssertionError()
+
+  override fun equals(other: Any?): Boolean {
+    if (other === this) return true
+    if (other !is Feature) return false
+    return unknownFields == other.unknownFields
+        && name == other.name
+        && location == other.location
   }
+
+  override fun hashCode(): Int {
+    var result = super.hashCode
+    if (result == 0) {
+      result = unknownFields.hashCode()
+      result = result * 37 + name.hashCode()
+      result = result * 37 + location.hashCode()
+      super.hashCode = result
+    }
+    return result
+  }
+
+  override fun toString(): String {
+    val result = mutableListOf<String>()
+    if (name != null) result += """name=$name"""
+    if (location != null) result += """location=$location"""
+    return result.joinToString(prefix = "Feature{", separator = ", ", postfix = "}")
+  }
+
+  fun copy(
+    name: String? = this.name,
+    location: Point? = this.location,
+    unknownFields: ByteString = this.unknownFields
+  ): Feature = Feature(name, location, unknownFields)
 
   companion object {
     @JvmField
@@ -74,7 +106,7 @@ data class Feature(
           when (tag) {
             1 -> name = ProtoAdapter.STRING.decode(reader)
             2 -> location = Point.ADAPTER.decode(reader)
-            else -> TagHandler.UNKNOWN_TAG
+            else -> reader.readUnknownField(tag)
           }
         }
         return Feature(

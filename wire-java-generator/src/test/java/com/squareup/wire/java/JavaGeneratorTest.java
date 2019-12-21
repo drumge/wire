@@ -17,8 +17,7 @@ package com.squareup.wire.java;
 
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
-import com.squareup.wire.schema.EnclosingType;
-import com.squareup.wire.schema.IdentifierSet;
+import com.squareup.wire.schema.PruningRules;
 import com.squareup.wire.schema.MessageType;
 import com.squareup.wire.schema.RepoBuilder;
 import com.squareup.wire.schema.Schema;
@@ -149,14 +148,13 @@ public final class JavaGeneratorTest {
         + "import java.lang.String;\n"
         + "import java.util.List;\n"
         + "import java.util.Map;\n"
-        + "import kotlin.jvm.JvmClassMappingKt;\n"
         + "import target.java.JavaMessage;\n"
         + "\n"
         + "public abstract class AbstractProtoMessageAdapter extends ProtoAdapter<JavaMessage> {\n"
         + "  private final ProtoAdapter<Map<String, Bar>> bars = ProtoAdapter.newMapAdapter(ProtoAdapter.STRING, Bar.ADAPTER);\n"
         + "\n"
         + "  public AbstractProtoMessageAdapter() {\n"
-        + "    super(FieldEncoding.LENGTH_DELIMITED, JvmClassMappingKt.getKotlinClass(JavaMessage.class));\n"
+        + "    super(FieldEncoding.LENGTH_DELIMITED, JavaMessage.class);\n"
         + "  }\n"
         + "\n"
         + "  public abstract Foo field(JavaMessage value);\n"
@@ -210,7 +208,7 @@ public final class JavaGeneratorTest {
         + "        }\n"
         + "      }\n"
         + "    }\n"
-        + "    reader.endMessage(token);\n"
+        + "    reader.endMessageAndGetUnknownFields(token);\n"
         + "    return fromProto(field, numbers, coin_flip, bars);\n"
         + "  }\n"
         + "\n"
@@ -250,7 +248,6 @@ public final class JavaGeneratorTest {
         + "import java.io.IOException;\n"
         + "import java.lang.Override;\n"
         + "import java.net.ProtocolException;\n"
-        + "import kotlin.jvm.JvmClassMappingKt;\n"
         + "import target.java.JavaCoinFlip;\n"
         + "\n"
         + "public class CoinFlipAdapter extends ProtoAdapter<JavaCoinFlip> {\n"
@@ -262,7 +259,7 @@ public final class JavaGeneratorTest {
         + "  protected final JavaCoinFlip TAILS;\n"
         + "\n"
         + "  public CoinFlipAdapter(JavaCoinFlip HEADS, JavaCoinFlip TAILS) {\n"
-        + "    super(FieldEncoding.VARINT, JvmClassMappingKt.getKotlinClass(JavaCoinFlip.class));\n"
+        + "    super(FieldEncoding.VARINT, JavaCoinFlip.class);\n"
         + "    this.HEADS = HEADS;\n"
         + "    this.TAILS = TAILS;\n"
         + "  }\n"
@@ -277,7 +274,7 @@ public final class JavaGeneratorTest {
         + "    switch (value) {\n"
         + "      case 1: return HEADS;\n"
         + "      case 2: return TAILS;\n"
-        + "      default: throw new ProtoAdapter.EnumConstantNotFoundException(value, JvmClassMappingKt.getKotlinClass(JavaCoinFlip.class));\n"
+        + "      default: throw new ProtoAdapter.EnumConstantNotFoundException(value, JavaCoinFlip.class);\n"
         + "    }\n"
         + "  }\n"
         + "\n"
@@ -297,6 +294,11 @@ public final class JavaGeneratorTest {
         + "  public JavaCoinFlip decode(ProtoReader reader) throws IOException {\n"
         + "    int value = reader.readVarint32();\n"
         + "    return fromValue(value);\n"
+        + "  }\n"
+        + "\n"
+        + "  @Override\n"
+        + "  public JavaCoinFlip redact(JavaCoinFlip value) {\n"
+        + "    return value;\n"
         + "  }\n"
         + "}\n");
   }
@@ -372,7 +374,7 @@ public final class JavaGeneratorTest {
     }
   }
 
-  @Test public void nullableFieldsWithoutParcelable() {
+  @Test public void nullableFieldsWithoutParcelable() throws IOException {
     Schema schema = new RepoBuilder()
         .add("message.proto", ""
             + "message A {\n"
@@ -393,7 +395,7 @@ public final class JavaGeneratorTest {
         + "    public final String c;");
   }
 
-  @Test public void androidSupport() {
+  @Test public void androidSupport() throws IOException {
     Schema schema = new RepoBuilder()
         .add("message.proto", ""
             + "message A {\n"
@@ -418,7 +420,7 @@ public final class JavaGeneratorTest {
   }
 
   @Test
-  public void enclosingTypeIsNotMessage() {
+  public void enclosingTypeIsNotMessage() throws IOException {
     Schema schema = new RepoBuilder()
         .add("message.proto", ""
             + "message A {\n"
@@ -428,7 +430,7 @@ public final class JavaGeneratorTest {
             + "}\n")
         .schema();
 
-    Schema pruned = schema.prune(new IdentifierSet.Builder()
+    Schema pruned = schema.prune(new PruningRules.Builder()
         .include("A.B")
         .build());
 
@@ -441,5 +443,45 @@ public final class JavaGeneratorTest {
             + "    throw new AssertionError();\n"
             + "  }")
         .contains("public static final class B extends Message<B, B.Builder> {");
+  }
+
+  @Test
+  public void generateTypeUsesPackageNameOnFieldAndClassNameClash() throws Exception {
+    RepoBuilder repoBuilder = new RepoBuilder()
+        .add("person.proto", ""
+            + "package common.proto;\n"
+            + "enum Gender {\n"
+            + "  Gender_Male = 0;\n"
+            + "  Gender_Female = 1;\n"
+            + "}\n"
+            + "message Person {\n"
+            + "  optional Gender Gender = 1;\n"
+            + "}\n");
+    assertThat(repoBuilder.generateCode("common.proto.Person"))
+        .contains("public final Gender common_proto_Gender;");
+  }
+
+  @Test
+  public void generateTypeUsesPackageNameOnFieldAndClassNameClashWithinPackage() throws Exception {
+    RepoBuilder repoBuilder = new RepoBuilder()
+        .add("a.proto", ""
+            + "package common.proto;\n"
+            + "enum Status {\n"
+            + "  Status_Approved = 0;\n"
+            + "  Status_Denied = 1;\n"
+            + "}\n"
+            + "enum AnotherStatus {\n"
+            + "  AnotherStatus_Processing = 0;\n"
+            + "  AnotherStatus_Completed = 1;\n"
+            + "}\n"
+            + "message A {\n"
+            + "  message B {\n"
+            + "    optional Status Status = 1;\n"
+            + "  }\n"
+            + "  repeated B b = 1;"
+            + "  optional AnotherStatus Status = 2;\n"
+            + "}\n");
+    assertThat(repoBuilder.generateCode("common.proto.A"))
+        .contains("public final AnotherStatus common_proto_Status;");
   }
 }

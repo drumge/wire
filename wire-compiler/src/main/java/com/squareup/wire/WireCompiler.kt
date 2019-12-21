@@ -18,7 +18,7 @@ package com.squareup.wire
 import com.squareup.wire.java.JavaGenerator
 import com.squareup.wire.java.ProfileLoader
 import com.squareup.wire.kotlin.KotlinGenerator
-import com.squareup.wire.schema.IdentifierSet
+import com.squareup.wire.schema.PruningRules
 import com.squareup.wire.schema.SchemaLoader
 import com.squareup.wire.schema.Service
 import com.squareup.wire.schema.Type
@@ -90,7 +90,7 @@ class WireCompiler internal constructor(
   val javaOut: String?,
   val kotlinOut: String?,
   val sourceFileNames: List<String>,
-  val identifierSet: IdentifierSet,
+  val pruningRules: PruningRules,
   val dryRun: Boolean,
   val namedFilesOnly: Boolean,
   val emitAndroid: Boolean,
@@ -110,26 +110,26 @@ class WireCompiler internal constructor(
     }
     var schema = schemaLoader.load()
 
-    if (!identifierSet.isEmpty) {
+    if (!pruningRules.isEmpty) {
       log.info("Analyzing dependencies of root types.")
-      schema = schema.prune(identifierSet)
-      for (rule in identifierSet.unusedIncludes()) {
+      schema = schema.prune(pruningRules)
+      for (rule in pruningRules.unusedIncludes()) {
         log.info("Unused include: $rule")
       }
-      for (rule in identifierSet.unusedExcludes()) {
+      for (rule in pruningRules.unusedExcludes()) {
         log.info("Unused exclude: $rule")
       }
     }
 
     /** Queue which can contain both [Type]s and [Service]s. */
     val queue = ConcurrentLinkedQueue<PendingFileSpec>()
-    for (protoFile in schema.protoFiles()) {
+    for (protoFile in schema.getProtoFiles()) {
       // Check if we're skipping files not explicitly named.
-      if (!sourceFileNames.isEmpty() && protoFile.location().path !in sourceFileNames) {
-        if (namedFilesOnly || protoFile.location().path == DESCRIPTOR_PROTO) continue
+      if (!sourceFileNames.isEmpty() && protoFile.location.path !in sourceFileNames) {
+        if (namedFilesOnly || protoFile.location.path == DESCRIPTOR_PROTO) continue
       }
-      queue.addAll(protoFile.types().map(::PendingTypeFileSpec))
-      queue.addAll(protoFile.services().map(::PendingServiceFileSpec))
+      queue.addAll(protoFile.types.map(::PendingTypeFileSpec))
+      queue.addAll(protoFile.services.map(::PendingServiceFileSpec))
     }
 
     val executor = Executors.newCachedThreadPool()
@@ -222,7 +222,7 @@ class WireCompiler internal constructor(
       vararg args: String
     ): WireCompiler {
       val sourceFileNames = mutableListOf<String>()
-      val identifierSetBuilder = IdentifierSet.Builder()
+      val pruningRulesBuilder = PruningRules.Builder()
       val protoPaths = mutableListOf<String>()
       var javaOut: String? = null
       var kotlinOut: String? = null
@@ -266,12 +266,12 @@ class WireCompiler internal constructor(
 
           arg.startsWith(INCLUDES_FLAG) -> {
             val includes = arg.substring(INCLUDES_FLAG.length)
-            identifierSetBuilder.include(includes.split(Regex(",")))
+            pruningRulesBuilder.include(includes.split(Regex(",")))
           }
 
           arg.startsWith(EXCLUDES_FLAG) -> {
             val excludes = arg.substring(EXCLUDES_FLAG.length)
-            identifierSetBuilder.exclude(excludes.split(Regex(",")))
+            pruningRulesBuilder.exclude(excludes.split(Regex(",")))
           }
 
           arg == QUIET_FLAG -> quiet = true
@@ -293,7 +293,7 @@ class WireCompiler internal constructor(
       logger.setQuiet(quiet)
 
       return WireCompiler(fileSystem, logger, protoPaths, javaOut, kotlinOut, sourceFileNames,
-          identifierSetBuilder.build(), dryRun, namedFilesOnly, emitAndroid, emitAndroidAnnotations,
+          pruningRulesBuilder.build(), dryRun, namedFilesOnly, emitAndroid, emitAndroidAnnotations,
           emitCompact, javaInterop)
     }
   }

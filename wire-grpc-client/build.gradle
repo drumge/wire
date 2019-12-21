@@ -2,9 +2,6 @@ apply plugin: 'java-library'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'ru.vyarus.animalsniffer'
 
-sourceCompatibility = JavaVersion.VERSION_1_7
-targetCompatibility = JavaVersion.VERSION_1_7
-
 jar {
   manifest {
     attributes('Automatic-Module-Name': 'wire-grpc-client')
@@ -16,9 +13,23 @@ animalsniffer {
   ignore 'com.squareup.wire.internal'
 }
 
+compileKotlin {
+  kotlinOptions {
+    freeCompilerArgs += "-Xuse-experimental=kotlinx.coroutines.ExperimentalCoroutinesApi"
+    freeCompilerArgs += "-Xexperimental=com.squareup.wire.WireGrpcExperimental"
+  }
+}
+
 dependencies {
-  implementation project(':wire-runtime')
-  api deps.okio.jvm
+  api project(':wire-runtime')
   api deps.okhttp
-  api deps.kotlin.coroutines.core
+  implementation deps.okio.jvm
+  implementation deps.kotlin.coroutines.core
+}
+
+afterEvaluate { project ->
+  project.tasks.dokka {
+    outputDirectory = "$rootDir/docs/3.x"
+    outputFormat = 'gfm'
+  }
 }

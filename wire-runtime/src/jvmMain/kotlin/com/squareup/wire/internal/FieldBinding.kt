@@ -17,12 +17,9 @@ package com.squareup.wire.internal
 
 import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
-import com.squareup.wire.ProtoAdapterJvm
 import com.squareup.wire.WireField
-import okio.ByteString
 import java.lang.reflect.Field
 import java.lang.reflect.Method
-import java.util.Locale
 
 /**
  * Read, write, and describe a tag within a message. This class knows how to assign fields to a
@@ -35,7 +32,6 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
 ) {
   val label: WireField.Label = wireField.label
   val name: String = messageField.name
-  val fieldType: Class<*> = messageField.type
   val tag: Int = wireField.tag
   private val keyAdapterString = wireField.keyAdapter
   private val adapterString = wireField.adapter
@@ -47,8 +43,6 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   private var singleAdapter: ProtoAdapter<*>? = null
   private var keyAdapter: ProtoAdapter<*>? = null
   private var adapter: ProtoAdapter<Any>? = null
-  private var defaultValue: Any? = null
-  private var hadRefrectDefaultValue: Boolean = false
 
   val isMap: Boolean
     get() = keyAdapterString.isNotEmpty()
@@ -70,11 +64,11 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   }
 
   fun singleAdapter(): ProtoAdapter<*> {
-    return singleAdapter ?: ProtoAdapterJvm.get(adapterString).also { singleAdapter = it }
+    return singleAdapter ?: ProtoAdapter.get(adapterString).also { singleAdapter = it }
   }
 
   fun keyAdapter(): ProtoAdapter<*> {
-    return keyAdapter ?: ProtoAdapterJvm.get(keyAdapterString).also { keyAdapter = it }
+    return keyAdapter ?: ProtoAdapter.get(keyAdapterString).also { keyAdapter = it }
   }
 
   internal fun adapter(): ProtoAdapter<Any> {
@@ -94,26 +88,39 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   internal fun value(builder: B, value: Any) {
     when {
       label.isRepeated -> {
-        val list = getFromBuilder(builder) as MutableList<Any>
-        list.add(value)
+        when (val list = getFromBuilder(builder)) {
+          is MutableList<*> -> (list as MutableList<Any>).add(value)
+          is List<*> -> {
+            val mutableList = list.toMutableList()
+            mutableList.add(value)
+            set(builder, mutableList)
+          }
+          else -> {
+            val type = list?.let { it::class.java }
+            throw ClassCastException("Expected a list type, got $type.")
+          }
+        }
       }
       keyAdapterString.isNotEmpty() -> {
-        val map = getFromBuilder(builder) as MutableMap<Any, Any>
-        map.putAll(value as Map<Any, Any>)
+        when (val map = getFromBuilder(builder)) {
+          is MutableMap<*, *> -> map.putAll(value as Map<Nothing, Nothing>)
+          is Map<*, *> -> {
+            val mutableMap = map.toMutableMap()
+            mutableMap.putAll(value as Map<out Any?, Any?>)
+            set(builder, mutableMap)
+          }
+          else -> {
+            val type = map?.let { it::class.java }
+            throw ClassCastException("Expected a map type, got $type.")
+          }
+        }
       }
       else -> set(builder, value)
     }
   }
 
-  internal fun defaultValue(builder: B) {
-    val value: Any? = getDefaultValue()
-    if (value != null) {
-      value(builder, value!!)
-    }
-  }
-
   /** Assign a single value for required/optional fields, or a list for repeated/packed fields. */
-  operator fun set(builder: B, value: Any) {
+  operator fun set(builder: B, value: Any?) {
     if (label.isOneOf) {
       // In order to maintain the 'oneof' invariant, call the builder setter method rather
       // than setting the builder field directly.
@@ -124,23 +131,6 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   }
 
   operator fun get(message: M): Any? = messageField.get(message)
-
-  private fun getDefaultValue(): Any? {
-    if (defaultValue == null) {
-      if (!hadRefrectDefaultValue) {
-        val defaultFieldName = "DEFAULT_" + name.toUpperCase(Locale.US)
-        try {
-          val defaultField: Field = messageField.declaringClass.getField(defaultFieldName)
-          defaultValue = defaultField.get(null)
-        } catch (e: Exception) {
-          defaultValue = adapter().decode(ByteString.EMPTY)
-        } finally {
-          hadRefrectDefaultValue = true
-        }
-      }
-    }
-    return defaultValue
-  }
 
   internal fun getFromBuilder(builder: B): Any? = builderField.get(builder)
 }

@@ -15,35 +15,16 @@
  */
 package com.squareup.wire.gradle
 
-import com.squareup.wire.gradle.WireExtension.JavaTarget
-import com.squareup.wire.gradle.WireExtension.ProtoRootSet
-import com.squareup.wire.gradle.WirePlugin.DependencyType.Directory
-import com.squareup.wire.gradle.WirePlugin.DependencyType.Jar
-import com.squareup.wire.gradle.WirePlugin.DependencyType.Path
-import com.squareup.wire.schema.Target
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.file.SourceDirectorySet
-import org.gradle.api.internal.file.FileOrUriNotationConverter
-import org.gradle.api.internal.file.SourceDirectorySetFactory
 import org.gradle.api.plugins.JavaBasePlugin
-import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskProvider
-import org.gradle.api.tasks.compile.JavaCompile
-import org.gradle.internal.typeconversion.NotationParser
 import org.jetbrains.kotlin.gradle.plugin.KotlinBasePluginWrapper
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import java.io.File
-import java.net.URI
-import javax.inject.Inject
 
-class WirePlugin @Inject constructor(
-  private val sourceDirectorySetFactory: SourceDirectorySetFactory
-) : Plugin<Project> {
+class WirePlugin : Plugin<Project> {
   private var kotlin = false
   private var java = false
-  private val jarToIncludes = mutableMapOf<String, List<String>>()
 
   private lateinit var sourceSetContainer: SourceSetContainer
 
@@ -51,8 +32,16 @@ class WirePlugin @Inject constructor(
     val logger = project.logger
 
     val extension = project.extensions.create(
-        "wire", WireExtension::class.java, project, sourceDirectorySetFactory
+        "wire", WireExtension::class.java, project
     )
+
+    project.configurations.create("protoSource")
+    project.configurations.create("protoPath")
+
+    project.tasks.register("generateProtos", WireTask::class.java) { task ->
+      task.group = "wire"
+      task.description = "Generate Wire protocol buffer implementation for .proto files"
+    }
 
     project.plugins.all {
       logger.debug("plugin: $it")
@@ -88,204 +77,58 @@ class WirePlugin @Inject constructor(
     project: Project,
     extension: WireExtension
   ) {
-    val sourceConfiguration = project.configurations.create("wireSourceDependencies")
-
-    val sourcePaths =
-        if (extension.sourcePaths.isNotEmpty() || extension.sourceTrees.isNotEmpty() || extension.sourceJars.isNotEmpty()) {
-          mergeDependencyPaths(
-              project, extension.sourcePaths, extension.sourceTrees, extension.sourceJars
-          )
-        } else {
-          mergeDependencyPaths(project, setOf("src/main/proto"))
-        }
-    sourcePaths.forEach {
-      sourceConfiguration.dependencies.add(project.dependencies.create(it))
-    }
-
-    val protoConfiguration = project.configurations.create("wireProtoDependencies")
-
-    if (extension.protoPaths.isNotEmpty() || extension.protoTrees.isNotEmpty() || extension.protoJars.isNotEmpty()) {
-      val allPaths = mergeDependencyPaths(
-          project, extension.protoPaths, extension.protoTrees, extension.protoJars
-      )
-      allPaths.forEach { path ->
-        protoConfiguration.dependencies.add(project.dependencies.create(path))
-      }
+    val sourceInput = WireInput(project, project.configurations.getByName("protoSource"))
+    if (extension.sourcePaths.isNotEmpty() ||
+        extension.sourceTrees.isNotEmpty() ||
+        extension.sourceJars.isNotEmpty()) {
+      sourceInput.addTrees(extension.sourceTrees)
+      sourceInput.addJars(extension.sourceJars)
+      sourceInput.addPaths(extension.sourcePaths)
     } else {
-      protoConfiguration.dependencies.addAll(sourceConfiguration.dependencies)
+      sourceInput.addPaths(setOf("src/main/proto"))
     }
 
-    // at this point, all source and proto file references should be set up for Gradle to resolve.
-
-    val targets = mutableListOf<Target>()
-    val defaultBuildDirectory = "${project.buildDir}/generated/src/main/java"
-    val javaOutDirs = mutableListOf<String>()
-    val kotlinOutDirs = mutableListOf<String>()
-
-    val kotlinTarget = extension.kotlinTarget
-    val javaTarget = extension.javaTarget ?: if (kotlinTarget != null) null else JavaTarget()
-
-    javaTarget?.let { target ->
-      val javaOut = target.out ?: defaultBuildDirectory
-      javaOutDirs += javaOut
-      targets += Target.JavaTarget(
-          elements = target.elements ?: listOf("*"),
-          outDirectory = javaOut,
-          android = target.android,
-          androidAnnotations = target.androidAnnotations,
-          compact = target.compact
-      )
-    }
-    kotlinTarget?.let { target ->
-      val kotlinOut = target.out ?: defaultBuildDirectory
-      kotlinOutDirs += kotlinOut
-      targets += Target.KotlinTarget(
-          elements = target.elements ?: listOf("*"),
-          outDirectory = kotlinOut,
-          android = target.android,
-          javaInterop = target.javaInterop,
-          blockingServices = target.blockingServices,
-          singleMethodServices = target.singleMethodServices
-      )
+    val protoInput = WireInput(project, project.configurations.getByName("protoPath"))
+    if (extension.protoPaths.isNotEmpty() ||
+        extension.protoTrees.isNotEmpty() ||
+        extension.protoJars.isNotEmpty()) {
+      protoInput.addTrees(extension.protoTrees)
+      protoInput.addJars(extension.protoJars)
+      protoInput.addPaths(extension.protoPaths)
     }
 
-    val wireTask = project.tasks.register("generateProtos", WireTask::class.java) { task ->
-      task.source(sourceConfiguration)
-      task.sourceConfiguration = sourceConfiguration
-      task.protoConfiguration = protoConfiguration
-      task.roots = extension.roots.toList()
-      task.prunes = extension.prunes.toList()
-      task.rules = extension.rules
-      task.targets = targets
-      task.group = "wire"
-      task.jarToIncludes = jarToIncludes
-      task.description = "Generate Wire protocol buffer implementation for .proto files"
+    // At this point, all source and proto file references should be set up for Gradle to resolve.
+
+    val outputs = extension.outputs.toMutableList()
+    if (outputs.isEmpty()) {
+      outputs.add(JavaOutput())
     }
 
-    javaTarget?.let {
-      val compileJavaTask = project.tasks.named("compileJava") as TaskProvider<JavaCompile>
-      compileJavaTask.configure {
-        it.source(javaOutDirs)
-        it.dependsOn(wireTask)
-      }
-      if (kotlin) {
-        sourceSetContainer = project.property("sourceSets") as SourceSetContainer
-        val mainSourceSet = sourceSetContainer.getByName("main") as SourceSet
-        mainSourceSet.java.srcDirs(javaOutDirs)
-
-        val compileKotlinTask = project.tasks.named("compileKotlin") as TaskProvider<KotlinCompile>
-        compileKotlinTask.configure {
-          it.dependsOn(wireTask)
-        }
+    for (output in outputs) {
+      if (output.out == null) {
+        output.out = "${project.buildDir}/generated/source/wire"
+      } else {
+        output.out = project.file(output.out!!).path
       }
     }
 
-    kotlinTarget?.let {
-      val compileKotlinTasks = project.tasks.withType(KotlinCompile::class.java)
-      if (compileKotlinTasks.isEmpty()) {
-        throw IllegalStateException("To generate Kotlin protos, please apply a Kotlin plugin.")
-      }
-      compileKotlinTasks.configureEach {
-        it.source(kotlinOutDirs)
-        it.dependsOn(wireTask)
-      }
-    }
-  }
+    val targets = outputs.map { it.toTarget() }
 
-  private fun mergeDependencyPaths(
-    project: Project,
-    dependencyPaths: Set<String>,
-    dependencyTrees: Set<SourceDirectorySet> = emptySet(),
-    dependencyJars: Set<ProtoRootSet> = emptySet()
-  ): List<Any> {
-    val allPaths = dependencyTrees.toMutableList<Any>()
-
-    val parser = FileOrUriNotationConverter.parser()
-
-    dependencyJars.forEach { depJar ->
-      depJar.srcJar?.let { path ->
-        val depPath = mapDependencyPath(parser, path, project)
-        if (depPath is Jar && depJar.includes.isNotEmpty()) {
-          jarToIncludes[depPath.path] = depJar.includes
-        }
-        allPaths += depPath.dependency
-      }
+    val wireTask = project.tasks.named("generateProtos") as TaskProvider<WireTask>
+    wireTask.configure {
+      it.source(sourceInput.configuration)
+      it.sourceInput = sourceInput
+      it.protoInput = protoInput
+      it.roots = extension.roots.toList()
+      it.prunes = extension.prunes.toList()
+      it.oldest = extension.oldest
+      it.newest = extension.newest
+      it.rules = extension.rules
+      it.targets = targets
     }
 
-    dependencyPaths.forEach { path ->
-      val depPath = mapDependencyPath(parser, path, project)
-      allPaths += depPath.dependency
-    }
-
-    return allPaths
-  }
-
-  private fun mapDependencyPath(
-    parser: NotationParser<Any, Any>,
-    path: String,
-    project: Project
-  ): DependencyType {
-    val converted = parser.parseNotation(path)
-
-    if (converted is File) {
-      val file = if (!converted.isAbsolute) File(project.projectDir, converted.path) else converted
-
-      check(file.exists()) { "Invalid path string: \"$path\". Path does not exist." }
-
-      return when {
-        file.isDirectory -> Directory(project, path)
-        file.isJar -> Jar(project, file.path)
-        else -> throw IllegalArgumentException(
-            """
-            |Invalid path string: "$path".
-            |For individual files, use the following syntax:
-            |wire {
-            |  sourcePath {
-            |    srcDir 'dirPath'
-            |    include 'relativePath'
-            |  }
-            |}
-            """.trimMargin()
-        )
-      }
-    } else if (converted is URI && isURL(converted)) {
-      throw IllegalArgumentException(
-          "Invalid path string: \"$path\". URL dependencies are not allowed."
-      )
-    } else {
-      // assume it's a possible external dependency and let Gradle sort it out later...
-      return Path(project, path)
-    }
-  }
-
-  private fun isURL(uri: URI) =
-      try {
-        uri.toURL()
-        true
-      } catch (e: Exception) {
-        false
-      }
-
-  sealed class DependencyType(val project: Project) {
-    abstract val path: String
-    abstract val dependency: Any
-
-    class Directory(project: Project, override val path: String) : DependencyType(project) {
-      override val dependency: Any
-        get() = project.files(path)
-    }
-
-    class Jar(project: Project, override val path: String) : DependencyType(project) {
-      override val dependency: Any
-        get() = project.files(path)
-    }
-
-    class Path(project: Project, override val path: String) : DependencyType(project) {
-      override val dependency: Any
-        get() = path
+    for (output in outputs) {
+      output.applyToProject(project, wireTask, kotlin)
     }
   }
 }
-
-private val File.isJar
-  get() = path.endsWith(".jar")

@@ -31,40 +31,47 @@ import java.util.Map;
 public final class Schema {
   private static final Ordering<ProtoFile> PATH_ORDER = new Ordering<ProtoFile>() {
     @Override public int compare(ProtoFile left, ProtoFile right) {
-      return left.location().getPath().compareTo(right.location().getPath());
+      return left.getLocation().getPath().compareTo(right.getLocation().getPath());
     }
   };
 
   private final ImmutableList<ProtoFile> protoFiles;
   private final ImmutableMap<String, Type> typesIndex;
   private final ImmutableMap<String, Service> servicesIndex;
+  private final Map<ProtoType, ProtoFile> protoFilesIndex;
 
   Schema(Iterable<ProtoFile> protoFiles) {
     this.protoFiles = PATH_ORDER.immutableSortedCopy(protoFiles);
-    this.typesIndex = buildTypesIndex(protoFiles);
-    this.servicesIndex = buildServicesIndex(protoFiles);
+    this.protoFilesIndex = new LinkedHashMap<>();
+    this.typesIndex = buildTypesIndex(protoFiles, this.protoFilesIndex);
+    this.servicesIndex = buildServicesIndex(protoFiles, this.protoFilesIndex);
   }
 
-  public ImmutableList<ProtoFile> protoFiles() {
+  public ImmutableList<ProtoFile> getProtoFiles() {
     return protoFiles;
   }
 
   /** Returns the proto file at {@code path}, or null if this schema has no such file. */
   public ProtoFile protoFile(String path) {
     for (ProtoFile protoFile : protoFiles) {
-      if (protoFile.location().getPath().equals(path)) {
+      if (protoFile.getLocation().getPath().equals(path)) {
         return protoFile;
       }
     }
     return null;
   }
 
+  /** Returns the proto file containing this {@code protoType}, or null if there isn't such file. */
+  public ProtoFile protoFile(ProtoType protoType) {
+    return protoFilesIndex.get(protoType);
+  }
+
   /**
    * Returns a copy of this schema that retains only the types and services selected by {@code
-   * identifierSet}, plus their transitive dependencies.
+   * pruningRules}, plus their transitive dependencies.
    */
-  public Schema prune(IdentifierSet identifierSet) {
-    return new Pruner(this, identifierSet).prune();
+  public Schema prune(PruningRules pruningRules) {
+    return new Pruner(this, pruningRules).prune();
   }
 
   /**
@@ -100,37 +107,62 @@ public final class Schema {
   }
 
   public Field getField(ProtoMember protoMember) {
-    Type type = getType(protoMember.type());
+    Type type = getType(protoMember.getType());
     if (!(type instanceof MessageType)) return null;
-    Field field = ((MessageType) type).field(protoMember.member());
+    Field field = ((MessageType) type).field(protoMember.getMember());
     if (field == null) {
-      field = ((MessageType) type).extensionField(protoMember.member());
+      field = ((MessageType) type).extensionField(protoMember.getMember());
     }
     return field;
   }
 
-  private static ImmutableMap<String, Type> buildTypesIndex(Iterable<ProtoFile> protoFiles) {
+  public Field getField(String typeName, String memberName) {
+    return getField(ProtoType.get(typeName), memberName);
+  }
+
+  public Field getField(ProtoType protoType, String memberName) {
+    return getField(ProtoMember.get(protoType, memberName));
+  }
+
+  public static Schema fromFiles(Iterable<ProtoFile> sourceFiles) {
+    return new Linker(CoreLoader.INSTANCE).link(sourceFiles);
+  }
+
+  static Schema fromFiles(Iterable<ProtoFile> sourceProtoFiles, Loader pathFilesLoader) {
+    return new Linker(pathFilesLoader).link(sourceProtoFiles);
+  }
+
+  private static ImmutableMap<String, Type> buildTypesIndex(Iterable<ProtoFile> protoFiles,
+      Map<ProtoType, ProtoFile> protoFilesIndex) {
     Map<String, Type> result = new LinkedHashMap<>();
     for (ProtoFile protoFile : protoFiles) {
-      for (Type type : protoFile.types()) {
-        index(result, type);
+      for (Type type : protoFile.getTypes()) {
+        index(result, type, protoFile, protoFilesIndex);
       }
     }
     return ImmutableMap.copyOf(result);
   }
 
-  private static void index(Map<String, Type> typesByName, Type type) {
-    typesByName.put(type.type().toString(), type);
-    for (Type nested : type.nestedTypes()) {
-      index(typesByName, nested);
+  private static void index(Map<String, Type> typesByName, Type type, ProtoFile protoFile,
+      Map<ProtoType, ProtoFile> protoFilesIndex) {
+    ProtoType protoType = type.getType();
+    if (!protoFilesIndex.containsKey(protoType)) {
+      protoFilesIndex.put(protoType, protoFile);
+    }
+
+    typesByName.put(type.getType().toString(), type);
+    for (Type nested : type.getNestedTypes()) {
+      index(typesByName, nested, protoFile, protoFilesIndex);
     }
   }
 
-  private static ImmutableMap<String, Service> buildServicesIndex(Iterable<ProtoFile> protoFiles) {
+  private static ImmutableMap<String, Service> buildServicesIndex(Iterable<ProtoFile> protoFiles,
+      Map<ProtoType, ProtoFile> protoFilesIndex) {
     ImmutableMap.Builder<String, Service> result = ImmutableMap.builder();
     for (ProtoFile protoFile : protoFiles) {
-      for (Service service : protoFile.services()) {
+      for (Service service : protoFile.getServices()) {
         result.put(service.type().toString(), service);
+        protoFilesIndex.put(service.type(), protoFile);
       }
     }
     return result.build();
@@ -154,6 +186,12 @@ public final class Schema {
   public ProtoAdapter<Object> protoAdapter(String typeName, boolean includeUnknown) {
     Type type = getType(typeName);
     if (type == null) throw new IllegalArgumentException("unexpected type " + typeName);
-    return new SchemaProtoAdapterFactory(this, includeUnknown).get(type.type());
+    return new SchemaProtoAdapterFactory(this, includeUnknown).get(type.getType());
+  }
+
+  boolean isExtensionField(ProtoMember protoMember) {
+    Type type = getType(protoMember.getType());
+    return type instanceof MessageType
+        && ((MessageType) type).extensionField(protoMember.getMember()) != null;
   }
 }

@@ -18,7 +18,6 @@ import java.lang.Override;
 import java.lang.String;
 import java.lang.StringBuilder;
 import java.util.List;
-import kotlin.jvm.JvmClassMappingKt;
 import okio.ByteString;
 
 /**
@@ -93,7 +92,7 @@ public final class Person extends Message<Person, Person.Builder> {
     builder.name = name;
     builder.id = id;
     builder.email = email;
-    builder.phone = Internal.copyOf("phone", phone);
+    builder.phone = Internal.copyOf(phone);
     builder.addUnknownFields(unknownFields());
     return builder;
   }
@@ -231,7 +230,7 @@ public final class Person extends Message<Person, Person.Builder> {
 
     private static final class ProtoAdapter_PhoneType extends EnumAdapter<PhoneType> {
       ProtoAdapter_PhoneType() {
-        super(JvmClassMappingKt.getKotlinClass(PhoneType.class));
+        super(PhoneType.class);
       }
 
       @Override
@@ -353,7 +352,7 @@ public final class Person extends Message<Person, Person.Builder> {
 
     private static final class ProtoAdapter_PhoneNumber extends ProtoAdapter<PhoneNumber> {
       public ProtoAdapter_PhoneNumber() {
-        super(FieldEncoding.LENGTH_DELIMITED, JvmClassMappingKt.getKotlinClass(PhoneNumber.class));
+        super(FieldEncoding.LENGTH_DELIMITED, PhoneNumber.class);
       }
 
       @Override
@@ -386,13 +385,11 @@ public final class Person extends Message<Person, Person.Builder> {
               break;
             }
             default: {
-              FieldEncoding fieldEncoding = reader.peekFieldEncoding();
-              Object value = fieldEncoding.rawProtoAdapter().decode(reader);
-              builder.addUnknownField(tag, fieldEncoding, value);
+              reader.readUnknownField(tag);
             }
           }
         }
-        reader.endMessage(token);
+        builder.addUnknownFields(reader.endMessageAndGetUnknownFields(token));
         return builder.build();
       }
 
@@ -407,7 +404,7 @@ public final class Person extends Message<Person, Person.Builder> {
 
   private static final class ProtoAdapter_Person extends ProtoAdapter<Person> {
     public ProtoAdapter_Person() {
-      super(FieldEncoding.LENGTH_DELIMITED, JvmClassMappingKt.getKotlinClass(Person.class));
+      super(FieldEncoding.LENGTH_DELIMITED, Person.class);
     }
 
     @Override
@@ -439,13 +436,11 @@ public final class Person extends Message<Person, Person.Builder> {
           case 3: builder.email(ProtoAdapter.STRING.decode(reader)); break;
           case 4: builder.phone.add(PhoneNumber.ADAPTER.decode(reader)); break;
           default: {
-            FieldEncoding fieldEncoding = reader.peekFieldEncoding();
-            Object value = fieldEncoding.rawProtoAdapter().decode(reader);
-            builder.addUnknownField(tag, fieldEncoding, value);
+            reader.readUnknownField(tag);
           }
         }
       }
-      reader.endMessage(token);
+      builder.addUnknownFields(reader.endMessageAndGetUnknownFields(token));
       return builder.build();
     }
 

@@ -7,13 +7,16 @@ import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.ProtoReader
 import com.squareup.wire.ProtoWriter
-import com.squareup.wire.TagHandler
 import com.squareup.wire.WireField
+import kotlin.Any
 import kotlin.AssertionError
+import kotlin.Boolean
 import kotlin.Deprecated
 import kotlin.DeprecationLevel
 import kotlin.Int
 import kotlin.Nothing
+import kotlin.String
+import kotlin.hashCode
 import kotlin.jvm.JvmField
 import okio.ByteString
 
@@ -24,7 +27,7 @@ import okio.ByteString
  * detected features, and the total distance covered as the cumulative sum of
  * the distance between each point.
  */
-data class RouteSummary(
+class RouteSummary(
   /**
    * The number of points received.
    */
@@ -57,15 +60,53 @@ data class RouteSummary(
     adapter = "com.squareup.wire.ProtoAdapter#INT32"
   )
   val elapsed_time: Int? = null,
-  val unknownFields: ByteString = ByteString.EMPTY
+  unknownFields: ByteString = ByteString.EMPTY
 ) : Message<RouteSummary, Nothing>(ADAPTER, unknownFields) {
   @Deprecated(
     message = "Shouldn't be used in Kotlin",
     level = DeprecationLevel.HIDDEN
   )
-  override fun newBuilder(): Nothing {
-    throw AssertionError()
+  override fun newBuilder(): Nothing = throw AssertionError()
+
+  override fun equals(other: Any?): Boolean {
+    if (other === this) return true
+    if (other !is RouteSummary) return false
+    return unknownFields == other.unknownFields
+        && point_count == other.point_count
+        && feature_count == other.feature_count
+        && distance == other.distance
+        && elapsed_time == other.elapsed_time
   }
+
+  override fun hashCode(): Int {
+    var result = super.hashCode
+    if (result == 0) {
+      result = unknownFields.hashCode()
+      result = result * 37 + point_count.hashCode()
+      result = result * 37 + feature_count.hashCode()
+      result = result * 37 + distance.hashCode()
+      result = result * 37 + elapsed_time.hashCode()
+      super.hashCode = result
+    }
+    return result
+  }
+
+  override fun toString(): String {
+    val result = mutableListOf<String>()
+    if (point_count != null) result += """point_count=$point_count"""
+    if (feature_count != null) result += """feature_count=$feature_count"""
+    if (distance != null) result += """distance=$distance"""
+    if (elapsed_time != null) result += """elapsed_time=$elapsed_time"""
+    return result.joinToString(prefix = "RouteSummary{", separator = ", ", postfix = "}")
+  }
+
+  fun copy(
+    point_count: Int? = this.point_count,
+    feature_count: Int? = this.feature_count,
+    distance: Int? = this.distance,
+    elapsed_time: Int? = this.elapsed_time,
+    unknownFields: ByteString = this.unknownFields
+  ): RouteSummary = RouteSummary(point_count, feature_count, distance, elapsed_time, unknownFields)
 
   companion object {
     @JvmField
@@ -99,7 +140,7 @@ data class RouteSummary(
             2 -> feature_count = ProtoAdapter.INT32.decode(reader)
             3 -> distance = ProtoAdapter.INT32.decode(reader)
             4 -> elapsed_time = ProtoAdapter.INT32.decode(reader)
-            else -> TagHandler.UNKNOWN_TAG
+            else -> reader.readUnknownField(tag)
           }
         }
         return RouteSummary(

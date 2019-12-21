@@ -7,13 +7,16 @@ import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.ProtoReader
 import com.squareup.wire.ProtoWriter
-import com.squareup.wire.TagHandler
 import com.squareup.wire.WireField
+import kotlin.Any
 import kotlin.AssertionError
+import kotlin.Boolean
 import kotlin.Deprecated
 import kotlin.DeprecationLevel
 import kotlin.Int
 import kotlin.Nothing
+import kotlin.String
+import kotlin.hashCode
 import kotlin.jvm.JvmField
 import okio.ByteString
 
@@ -23,7 +26,7 @@ import okio.ByteString
  * Latitudes should be in the range +/- 90 degrees and longitude should be in
  * the range +/- 180 degrees (inclusive).
  */
-data class Point(
+class Point(
   @field:WireField(
     tag = 1,
     adapter = "com.squareup.wire.ProtoAdapter#INT32"
@@ -34,15 +37,45 @@ data class Point(
     adapter = "com.squareup.wire.ProtoAdapter#INT32"
   )
   val longitude: Int? = null,
-  val unknownFields: ByteString = ByteString.EMPTY
+  unknownFields: ByteString = ByteString.EMPTY
 ) : Message<Point, Nothing>(ADAPTER, unknownFields) {
   @Deprecated(
     message = "Shouldn't be used in Kotlin",
     level = DeprecationLevel.HIDDEN
   )
-  override fun newBuilder(): Nothing {
-    throw AssertionError()
+  override fun newBuilder(): Nothing = throw AssertionError()
+
+  override fun equals(other: Any?): Boolean {
+    if (other === this) return true
+    if (other !is Point) return false
+    return unknownFields == other.unknownFields
+        && latitude == other.latitude
+        && longitude == other.longitude
   }
+
+  override fun hashCode(): Int {
+    var result = super.hashCode
+    if (result == 0) {
+      result = unknownFields.hashCode()
+      result = result * 37 + latitude.hashCode()
+      result = result * 37 + longitude.hashCode()
+      super.hashCode = result
+    }
+    return result
+  }
+
+  override fun toString(): String {
+    val result = mutableListOf<String>()
+    if (latitude != null) result += """latitude=$latitude"""
+    if (longitude != null) result += """longitude=$longitude"""
+    return result.joinToString(prefix = "Point{", separator = ", ", postfix = "}")
+  }
+
+  fun copy(
+    latitude: Int? = this.latitude,
+    longitude: Int? = this.longitude,
+    unknownFields: ByteString = this.unknownFields
+  ): Point = Point(latitude, longitude, unknownFields)
 
   companion object {
     @JvmField
@@ -68,7 +101,7 @@ data class Point(
           when (tag) {
             1 -> latitude = ProtoAdapter.INT32.decode(reader)
             2 -> longitude = ProtoAdapter.INT32.decode(reader)
-            else -> TagHandler.UNKNOWN_TAG
+            else -> reader.readUnknownField(tag)
           }
         }
         return Point(

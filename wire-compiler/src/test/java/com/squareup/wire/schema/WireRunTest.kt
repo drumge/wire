@@ -18,7 +18,13 @@ package com.squareup.wire.schema
 import com.google.common.jimfs.Configuration
 import com.google.common.jimfs.Jimfs
 import com.squareup.wire.StringWireLogger
+import com.squareup.wire.kotlin.RpcCallStyle
+import com.squareup.wire.kotlin.RpcRole
+import com.squareup.wire.testing.add
+import com.squareup.wire.testing.find
+import com.squareup.wire.testing.get
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.Assert.fail
 import org.junit.Test
 
 class WireRunTest {
@@ -34,7 +40,7 @@ class WireRunTest {
     val wireRun = WireRun(
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
-        targets = listOf(Target.JavaTarget(outDirectory = "generated/java"))
+        targets = listOf(JavaTarget(outDirectory = "generated/java"))
     )
     wireRun.execute(fs, logger)
 
@@ -56,7 +62,7 @@ class WireRunTest {
     val wireRun = WireRun(
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
-        targets = listOf(Target.KotlinTarget(outDirectory = "generated/kt"))
+        targets = listOf(KotlinTarget(outDirectory = "generated/kt"))
     )
     wireRun.execute(fs, logger)
 
@@ -64,9 +70,9 @@ class WireRunTest {
         "generated/kt/squareup/colors/Blue.kt",
         "generated/kt/squareup/colors/Red.kt")
     assertThat(fs.get("generated/kt/squareup/colors/Blue.kt"))
-        .contains("data class Blue")
+        .contains("class Blue")
     assertThat(fs.get("generated/kt/squareup/colors/Red.kt"))
-        .contains("data class Red")
+        .contains("class Red")
   }
 
   @Test
@@ -80,14 +86,14 @@ class WireRunTest {
         sourcePath = listOf(Location.get("routes/src/main/proto")),
         protoPath = listOf(Location.get("colors/src/main/proto"),
             Location.get("polygons/src/main/proto")),
-        targets = listOf(Target.KotlinTarget(outDirectory = "generated/kt"))
+        targets = listOf(KotlinTarget(outDirectory = "generated/kt"))
     )
     wireRun.execute(fs, logger)
 
     assertThat(fs.find("generated")).containsExactly(
-        "generated/kt/squareup/routes/Route.kt")
-    assertThat(fs.get("generated/kt/squareup/routes/Route.kt"))
-        .contains("interface Route : Service", "suspend fun GetUpdatedRed")
+        "generated/kt/squareup/routes/RouteClient.kt")
+    assertThat(fs.get("generated/kt/squareup/routes/RouteClient.kt"))
+        .contains("interface RouteClient : Service", "fun GetUpdatedBlue()")
   }
 
   @Test
@@ -102,14 +108,19 @@ class WireRunTest {
         protoPath = listOf(Location.get("colors/src/main/proto"),
             Location.get("polygons/src/main/proto")),
         targets = listOf(
-            Target.KotlinTarget(outDirectory = "generated/kt", blockingServices = true))
+            KotlinTarget(
+                outDirectory = "generated/kt",
+                rpcCallStyle = RpcCallStyle.BLOCKING,
+                rpcRole = RpcRole.SERVER
+            )
+        )
     )
     wireRun.execute(fs, logger)
 
     assertThat(fs.find("generated")).containsExactly(
-        "generated/kt/squareup/routes/Route.kt")
-    assertThat(fs.get("generated/kt/squareup/routes/Route.kt"))
-        .contains("interface Route : Service", "fun GetUpdatedRed")
+        "generated/kt/squareup/routes/RouteBlockingServer.kt")
+    assertThat(fs.get("generated/kt/squareup/routes/RouteBlockingServer.kt"))
+        .contains("interface RouteBlockingServer : Service", "fun GetUpdatedRed")
         .doesNotContain("suspend fun GetUpdatedRed")
   }
 
@@ -125,19 +136,19 @@ class WireRunTest {
         protoPath = listOf(Location.get("colors/src/main/proto"),
             Location.get("polygons/src/main/proto")),
         targets = listOf(
-            Target.KotlinTarget(outDirectory = "generated/kt", singleMethodServices = true))
+            KotlinTarget(outDirectory = "generated/kt", singleMethodServices = true))
     )
     wireRun.execute(fs, logger)
 
     assertThat(fs.find("generated")).containsExactly(
-        "generated/kt/squareup/routes/RouteGetUpdatedBlue.kt",
-        "generated/kt/squareup/routes/RouteGetUpdatedRed.kt")
-    assertThat(fs.get("generated/kt/squareup/routes/RouteGetUpdatedBlue.kt"))
-        .contains("interface RouteGetUpdatedBlue : Service")
-        .doesNotContain("interface RouteGetUpdatedRed : Service")
-    assertThat(fs.get("generated/kt/squareup/routes/RouteGetUpdatedRed.kt"))
-        .contains("interface RouteGetUpdatedRed : Service")
-        .doesNotContain("interface RouteGetUpdatedBlue : Service")
+        "generated/kt/squareup/routes/RouteGetUpdatedBlueClient.kt",
+        "generated/kt/squareup/routes/RouteGetUpdatedRedClient.kt")
+    assertThat(fs.get("generated/kt/squareup/routes/RouteGetUpdatedBlueClient.kt"))
+        .contains("interface RouteGetUpdatedBlueClient : Service")
+        .doesNotContain("interface RouteGetUpdatedRedClient : Service")
+    assertThat(fs.get("generated/kt/squareup/routes/RouteGetUpdatedRedClient.kt"))
+        .contains("interface RouteGetUpdatedRedClient : Service")
+        .doesNotContain("interface RouteGetUpdatedBlueClient : Service")
   }
 
   @Test
@@ -150,10 +161,10 @@ class WireRunTest {
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
         targets = listOf(
-            Target.KotlinTarget(
+            KotlinTarget(
                 outDirectory = "generated/kt",
-                elements = listOf("squareup.colors.Blue")),
-            Target.JavaTarget(
+                includes = listOf("squareup.colors.Blue")),
+            JavaTarget(
                 outDirectory = "generated/java")
         )
     )
@@ -163,7 +174,7 @@ class WireRunTest {
         "generated/kt/squareup/colors/Blue.kt",
         "generated/java/squareup/colors/Red.java")
     assertThat(fs.get("generated/kt/squareup/colors/Blue.kt"))
-        .contains("data class Blue")
+        .contains("class Blue")
     assertThat(fs.get("generated/java/squareup/colors/Red.java"))
         .contains("public final class Red extends Message")
   }
@@ -178,10 +189,10 @@ class WireRunTest {
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
         targets = listOf(
-            Target.JavaTarget(
+            JavaTarget(
                 outDirectory = "generated/java",
-                elements = listOf("squareup.colors.Blue")),
-            Target.KotlinTarget(
+                includes = listOf("squareup.colors.Blue")),
+            KotlinTarget(
                 outDirectory = "generated/kt")
         )
     )
@@ -193,7 +204,73 @@ class WireRunTest {
     assertThat(fs.get("generated/java/squareup/colors/Blue.java"))
         .contains("public final class Blue extends Message")
     assertThat(fs.get("generated/kt/squareup/colors/Red.kt"))
-        .contains("data class Red")
+        .contains("class Red")
+  }
+
+  @Test
+  fun excludesTypeName() {
+    writeBlueProto()
+    writeRedProto()
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(
+            Location.get("colors/src/main/proto"),
+            Location.get("polygons/src/main/proto")
+        ),
+        targets = listOf(
+            KotlinTarget(
+                outDirectory = "generated/kt",
+                excludes = listOf("squareup.colors.Red")),
+            JavaTarget(
+                outDirectory = "generated/java")
+        )
+    )
+    wireRun.execute(fs, logger)
+
+    assertThat(fs.find("generated")).containsExactlyInAnyOrder(
+        "generated/kt/squareup/colors/Blue.kt",
+        "generated/java/squareup/colors/Red.java",
+        "generated/kt/squareup/polygons/Triangle.kt")
+    assertThat(fs.get("generated/kt/squareup/colors/Blue.kt"))
+        .contains("class Blue")
+    assertThat(fs.get("generated/java/squareup/colors/Red.java"))
+        .contains("public final class Red extends Message")
+    assertThat(fs.get("generated/kt/squareup/polygons/Triangle.kt"))
+        .contains("class Triangle")
+  }
+
+  @Test
+  fun excludesWildcard() {
+    writeBlueProto()
+    writeRedProto()
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(
+            Location.get("colors/src/main/proto"),
+            Location.get("polygons/src/main/proto")
+        ),
+        targets = listOf(
+            KotlinTarget(
+                outDirectory = "generated/kt",
+                excludes = listOf("squareup.colors.*")),
+            JavaTarget(
+                outDirectory = "generated/java")
+        )
+    )
+    wireRun.execute(fs, logger)
+
+    assertThat(fs.find("generated")).containsExactlyInAnyOrder(
+        "generated/java/squareup/colors/Blue.java",
+        "generated/java/squareup/colors/Red.java",
+        "generated/kt/squareup/polygons/Triangle.kt")
+    assertThat(fs.get("generated/java/squareup/colors/Blue.java"))
+        .contains("public final class Blue extends Message")
+    assertThat(fs.get("generated/java/squareup/colors/Red.java"))
+        .contains("public final class Red extends Message")
+    assertThat(fs.get("generated/kt/squareup/polygons/Triangle.kt"))
+        .contains("class Triangle")
   }
 
   @Test
@@ -206,7 +283,7 @@ class WireRunTest {
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
         treeShakingRoots = listOf("squareup.colors.Blue"),
-        targets = listOf(Target.KotlinTarget(outDirectory = "generated/kt"))
+        targets = listOf(KotlinTarget(outDirectory = "generated/kt"))
     )
     wireRun.execute(fs, logger)
 
@@ -224,7 +301,7 @@ class WireRunTest {
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
         treeShakingRubbish = listOf("squareup.colors.Red"),
-        targets = listOf(Target.KotlinTarget(outDirectory = "generated/kt"))
+        targets = listOf(KotlinTarget(outDirectory = "generated/kt"))
     )
     wireRun.execute(fs, logger)
 
@@ -242,8 +319,8 @@ class WireRunTest {
         sourcePath = listOf(Location.get("colors/src/main/proto")),
         protoPath = listOf(Location.get("polygons/src/main/proto")),
         targets = listOf(
-            Target.NullTarget(elements = listOf("squareup.colors.Red")),
-            Target.KotlinTarget(outDirectory = "generated/kt")
+            NullTarget(includes = listOf("squareup.colors.Red")),
+            KotlinTarget(outDirectory = "generated/kt")
         )
     )
     wireRun.execute(fs, logger)
@@ -260,10 +337,10 @@ class WireRunTest {
     val wireRun = WireRun(
         sourcePath = listOf(Location.get("polygons/src/main/proto")),
         targets = listOf(
-            Target.JavaTarget(
+            JavaTarget(
                 outDirectory = "generated/java",
-                elements = listOf("squareup.polygons.Square")),
-            Target.KotlinTarget(
+                includes = listOf("squareup.polygons.Square")),
+            KotlinTarget(
                 outDirectory = "generated/kt")
         )
     )
@@ -274,10 +351,175 @@ class WireRunTest {
         "generated/kt/com/squareup/polygons/Rhombus.kt")
   }
 
+  @Test
+  fun nonExclusiveTypeEmittedTwice() {
+    writeSquareProto()
+    writeRhombusProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(
+            JavaTarget(
+                outDirectory = "generated/java"),
+            KotlinTarget(
+                outDirectory = "generated/kt",
+                exclusive = false,
+                includes = listOf("squareup.polygons.Square"))
+        )
+    )
+    wireRun.execute(fs, logger)
+
+    assertThat(fs.find("generated")).containsExactlyInAnyOrder(
+        "generated/java/com/squareup/polygons/Square.java",
+        "generated/java/com/squareup/polygons/Rhombus.java",
+        "generated/kt/com/squareup/polygons/Square.kt")
+  }
+
+  @Test
+  fun proto3Skipped() {
+    writeBlueProto()
+    fs.add("colors/src/main/proto/squareup/colors/red.proto", """
+          |syntax = "proto3";
+          |package squareup.colors;
+          |message Red {
+          |  string oval = 1;
+          |}
+          """.trimMargin())
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("colors/src/main/proto")),
+        protoPath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(KotlinTarget(outDirectory = "generated/kt"))
+    )
+    wireRun.execute(fs, logger)
+
+    assertThat(fs.find("generated")).containsExactlyInAnyOrder(
+        "generated/kt/squareup/colors/Blue.kt")
+  }
+
+  /**
+   * If Wire loaded (and therefore validated) members of dependencies this would fail with a
+   * [SchemaException]. But we no longer do this to make Wire both faster and to eliminate the need
+   * to place all transitive dependencies in the proto path.
+   */
+  @Test
+  fun onlyDirectDependenciesOfSourcePathRequired() {
+    writeBlueProto()
+    fs.add("polygons/src/main/proto/squareup/polygons/triangle.proto", """
+          |syntax = "proto2";
+          |package squareup.polygons;
+          |message Triangle {
+          |  repeated squareup.geometry.Angle angles = 2; // No such type!
+          |}
+          """.trimMargin())
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("colors/src/main/proto")),
+        protoPath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(JavaTarget(outDirectory = "generated/java"))
+    )
+    wireRun.execute(fs, logger)
+
+    assertThat(fs.find("generated")).containsExactly(
+        "generated/java/squareup/colors/Blue.java")
+    assertThat(fs.get("generated/java/squareup/colors/Blue.java"))
+        .contains("public final class Blue extends Message")
+  }
+
+  @Test
+  fun customOnly() {
+    writeBlueProto()
+    writeRedProto()
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("colors/src/main/proto")),
+        protoPath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(CustomTargetBeta(
+            outDirectory = "generated/markdown",
+            customHandlerClass = MarkdownHandler::class.qualifiedName!!
+        ))
+    )
+    wireRun.execute(fs, logger)
+
+    assertThat(fs.find("generated")).containsExactly(
+        "generated/markdown/squareup/colors/Blue.md",
+        "generated/markdown/squareup/colors/Red.md")
+    assertThat(fs.get("generated/markdown/squareup/colors/Blue.md")).isEqualTo("""
+            |# Blue
+            |
+            |This is the color of the sky.
+            |""".trimMargin())
+    assertThat(fs.get("generated/markdown/squareup/colors/Red.md")).isEqualTo("""
+            |# Red
+            |
+            |This is the color of the sky when the sky is lava.
+            |""".trimMargin())
+  }
+
+  @Test
+  fun noSuchClass() {
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(CustomTargetBeta(
+            outDirectory = "generated/markdown",
+            customHandlerClass = "foo"
+        ))
+    )
+    try {
+      wireRun.execute(fs, logger)
+      fail()
+    } catch (expected: IllegalArgumentException) {
+      assertThat(expected).hasMessage("Couldn't find CustomHandlerClass 'foo'")
+    }
+  }
+
+  @Test
+  fun noPublicConstructor() {
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(CustomTargetBeta(
+            outDirectory = "generated/markdown",
+            customHandlerClass = "java.lang.Void"
+        ))
+    )
+    try {
+      wireRun.execute(fs, logger)
+      fail()
+    } catch (expected: IllegalArgumentException) {
+      assertThat(expected).hasMessage("No public constructor on java.lang.Void")
+    }
+  }
+
+  @Test
+  fun classDoesNotImplementCustomHandlerInterface() {
+    writeTriangleProto()
+
+    val wireRun = WireRun(
+        sourcePath = listOf(Location.get("polygons/src/main/proto")),
+        targets = listOf(CustomTargetBeta(
+            outDirectory = "generated/markdown",
+            customHandlerClass = "java.lang.Object"
+        ))
+    )
+    try {
+      wireRun.execute(fs, logger)
+      fail()
+    } catch (expected: IllegalArgumentException) {
+      assertThat(expected).hasMessage("java.lang.Object does not implement CustomHandlerBeta")
+    }
+  }
+
   private fun writeRedProto() {
     fs.add("colors/src/main/proto/squareup/colors/red.proto", """
           |syntax = "proto2";
           |package squareup.colors;
+          |/** This is the color of the sky when the sky is lava. */
           |message Red {
           |  optional string oval = 1;
           |}
@@ -302,6 +544,7 @@ class WireRunTest {
           |syntax = "proto2";
           |package squareup.colors;
           |import "squareup/polygons/triangle.proto";
+          |/** This is the color of the sky. */
           |message Blue {
           |  optional string circle = 1;
           |  optional squareup.polygons.Triangle triangle = 2;

@@ -1,8 +1,129 @@
 Change Log
 ==========
+
+Version 3.0.2
+-------------
+
+_2019-11-22_
+
+ * Fix: Generate correct unknownFields code if a message field's name is a Kotlin keyword.
+ * Fix: Properly handle unknown enum values in Kotlin.
+ * Fix: ProtoPruner: retain used extends.
+ * Fix: ProtoPruner: retain only used imports.
+ * Fix: ProtoPruner: use NewSchemaLoader that correctly loads google.protobuf.descriptor.
+ * Fix: ProtoPruner: print default values for scalar types for proto target within the options.
+ * Fix: ProtoPruner: fix handling of options.
+ * Fix: ProtoPruner: print default values for enums.
+
+Version 3.0.1
+-------------
+
+_2019-10-18_
+
+ * Fix: Use the correct adapter path for gRPC endpoints that customize the Java package.
+ * Fix: Preserve documentation in generated services.
+ * Fix: Fail to generate code if the source directory doesn't exist.
+ * Fix: Make Kotlin consistent with Java for unknown enum constants. We now treat these as unknown
+   fields rather than failing to decode the enclosing message.
+
+Version 3.0.0
+-------------
+
+_2019-10-07_
+
+ * Update: All gRPC networking calls are encoded in gzip.
+
+Version 3.0.0-rc03
+------------------
+
+_2019-10-04_
+
+ * Fix: Update dependency to a stable version, `2.4.1` of Okio.
+
+Version 3.0.0-rc02
+------------------
+
+_2019-10-01_
+
+### Kotlin
+
+ * Fix: Nullify other oneof fields in Builder setters in Kotlin interop.
+ * Fix: Use unknownFields in `hashCode()`.
+ * Fix: Remove `withoutUnknownFields()` from Kotlin.
+
+### gRPC
+
+ * Update: Total rewrite of the generated interfaces for clients:
+
+   Introduce two interfaces, `GrpcCall` for simple RPCs, and `GrpcStreamingCall` fox duplex ones. Both
+   will provide blocking and suspending API, including a reference to the underlying
+   [OkHttp](https://github.com/square/okhttp)
+   [Call](https://square.github.io/okhttp/4.x/okhttp/okhttp3/-call/) object and its timeout.
+
+ * Fix: Send stream cancels from clients.
+
+### Misc
+
+ * New: Changes printing of options and enums:
+   * No empty lines between options and fields for enums.
+   * Print options on new lines only when more than one.
+ * Fix: Don't cache Message's hash code on Native.
+ * Fix: Fix handling of map values in `FieldBinding`.
+ * Fix: Fix import fails on windows due to path separator.
+ * Fix: Don't emit proto2 sources for proto3 syntax.
+
+Version 3.0.0-rc01
+------------------
+
+_2019-08-02_
+
+### Compiler + Gradle plugin
+
+ * New: Support includes on Maven coordinate dependencies.
+ * New: Track includes separately for source vs proto paths.
+ * New: Follow symlinks when building.
+ * New: Change the Gradle plugin to track targets as a list.
+ * New: Includes and Excludes for Wire targets.
+ * New: Print errors on ambiguous and missing imports.
+ * Fix: Fix a bug where protopath Maven resources weren't working.
+ * Fix: Don't reuse source dependencies as protopath dependencies.
+ * Fix: Fix `equals()` implementation for messages with no fields.
+
+### Kotlin
+
+ * New: Move Wire.kt into `jvmMain` to discourage its use in common Kotlin code.
+ * New: Make `Message.adapter` a `val`.
+ * New: Optimize `decode()` code for protos with no fields.
+ * New: Update supported Native platforms.
+ * New: Make `Message.unknownFields` property non-nullable.
+ * New: Make `Message.unknownFields` a `val`.
+ * Fix: Don't use `KClass.simpleName` to avoid needing `kotlin-reflect` dependency.
+ * Fix: Use `kotlin.UnsupportedOperationException` in generated code.
+ 
+### gRPC
+
+ * New: Introduce `MessageSource` and `MessageSink` interfaces in `wire-runtime`.
+ * New: Honor Java package names in Wire gRPC services.
+ * New: Make `PipeDuplexRequestBody` internal.
+ * Fix: Workaround for `@Generated` annotation on Java 9+.
+ * Fix: Fix types for blocking APIs.
+ 
+### Misc
+
+ * Fix: Fix deserializing null values in Gson adapter.
+ * Fix: Change `wire-runtime` artifact names to preserve 2.x compatibility.
+
+Version 3.0.0-alpha03
+---------------------
+
+_2019-06-22_
+
+ * Similar to alpha02, but with proper `wire-runtime` multiplatform artifacts.
 	
-Version 3.0.0-alpha02 *(2019-05-16)*
-------------------------------------
+Version 3.0.0-alpha02
+---------------------
+
+_2019-06-21_
 
  * New: Experimental multiplatform runtime.
  
@@ -22,11 +143,22 @@ Version 3.0.0-alpha02 *(2019-05-16)*
    api "com.squareup.wire:wire-runtime-jvm:3.0.0-alpha02"
    ```
    
+ * New: Generate RPCs as Single Abstract Methods.
+ * New: Add "singleMethod" Gradle plugin configuration for services.
+ * New: Add "blockingServices" Gradle plugin configuration for services.
+ * New: Support packageless services code generation.
+ * New: Remove sealed classes-based oneof implementation.
+ * New: Don't generate a Builder for non-interop Kotlin messages.
  * Fix: Kotlin Generator correctly generates code for Protobuf services.
- * Fix: Improved formatting of generated Kotlin code
+ * Fix: Improved formatting of generated Kotlin code.
+ * Fix: Generate correct adapter names for WireField annotation.
+ * Fix: Generate labels for WireField annotation.
+ * Fix: Wrap oneof error message properly.
 	
-Version 3.0.0-alpha01 *(2019-03-14)*
-------------------------------------
+Version 3.0.0-alpha01
+---------------------
+
+_2019-03-14_
 
  * New: Kotlin Generator
  
@@ -149,8 +281,10 @@ Version 3.0.0-alpha01 *(2019-03-14)*
   * Fix: Return subclass type instead of abstract parameterized type for newBuilder.
   * Fix: Validate enum namespace in file context are unique.
 
-Version 2.2.0 *(2016-06-17)*
-----------------------------
+Version 2.2.0
+-------------
+
+_2016-06-17_
 
  * New: Support for `map` type in the schema, compiler, and runtime!
  * New: `AndroidMessage` base class consolidates everything required for supporting Android and will
@@ -165,14 +299,18 @@ Version 2.2.0 *(2016-06-17)*
    guaranteed to never be `null`.
 
 
-Version 2.1.2 *(2016-04-15)*
-----------------------------
+Version 2.1.2
+-------------
+
+_2016-04-15_
 
  * Fix: Gson type adapter now deserializes JSON null literals to empty list for repeated fields.
 
 
-Version 2.1.1 *(2016-02-01)*
-----------------------------
+Version 2.1.1
+-------------
+
+_2016-02-01_
 
  * New: `reserved` keyword is now supported and enforced.
  * Fix: Defer reflection-based lookup of enum method until first use to avoid
@@ -181,8 +319,10 @@ Version 2.1.1 *(2016-02-01)*
  * Fix: Adjacent string literals are not correctly concatenated.
 
 
-Version 2.1.0 *(2016-01-18)*
-----------------------------
+Version 2.1.0
+-------------
+
+_2016-01-18_
 
  * **Empty lists of packed values were being encoded incorrectly.** In Wire 2.0.x our message
    adapters incorrectly included empty lists for `[packed=true]` rather than omitting them. This is
@@ -193,8 +333,10 @@ Version 2.1.0 *(2016-01-18)*
  * New: Wire now includes a sample code generation for service interfaces.
 
 
-Version 2.0.3 *(2016-01-04)*
-----------------------------
+Version 2.0.3
+-------------
+
+_2016-01-04_
 
  * New: `ProtoAdapter.get` overload which returns an adapter given an instance of a message.
  * New: `@Nullable` annotations are emitted for `optional` fields when using `--android`.
@@ -202,8 +344,10 @@ Version 2.0.3 *(2016-01-04)*
    This results in smaller code size and less method references (for Android users).
 
 
-Version 2.0.2 *(2015-12-14)*
-----------------------------
+Version 2.0.2
+-------------
+
+_2015-12-14_
 
  * Fix: Exclude unknown fields when encoding JSON and drop unknown fields when parsing JSON.
  * Fix: Ensure JSON encoding and decoding works in the default generation mode (not just
@@ -211,8 +355,10 @@ Version 2.0.2 *(2015-12-14)*
  * Fix: Update to JavaPoet 1.4 for more accurate generation of valid Java code.
 
 
-Version 2.0.1 *(2015-11-12)*
-----------------------------
+Version 2.0.1
+-------------
+
+_2015-11-12_
 
  * Fix: Do not emit `case` statements for aliased enum constant values. The first constant for a
    value will be returned when deserializing.
@@ -221,8 +367,10 @@ Version 2.0.1 *(2015-11-12)*
    the dependencies of an excluded member were retained despite the member itself being omitted.
 
 
-Version 2.0.0 *(2015-10-23)*
-----------------------------
+Version 2.0.0
+-------------
+
+_2015-10-23_
 
 Wire 2 is a backwards-incompatible release. It makes breaking changes to the compiler, runtime,
 extensions, and generated code. These changes aren’t made lightly as we’ve endured the upgrade in
@@ -298,8 +446,10 @@ no longer need a `Wire` instance!
  * Fix: Extension fields must not be `required`.
 
 
-Version 1.8.0 *(2015-06-27)*
-----------------------------
+Version 1.8.0
+-------------
+
+_2015-06-27_
 
  * New: `oneof` support!
  * Fix: Correct serialization of repeated unknown fields.
@@ -307,46 +457,57 @@ Version 1.8.0 *(2015-06-27)*
  * Warning: The 'protoparser' library was updated to version 4.0. This changes the type passed to
    any `ServiceWriter` implementations.
 
+Version 1.7.0
+-------------
 
-Version 1.7.0 *(2015-03-05)*
-----------------------------
+_2015-03-05_
 
  * New: Messages implement `Serializable`. The serialized form follows protobuf encoding, so
    renaming fields is safe as long as tags are consistent. (Renaming classes is unsafe, however).
    Note that extension fields are deserialized as unknown fields.
 
-Version 1.6.1 *(2015-01-16)*
-----------------------------
+Version 1.6.1
+-------------
+
+_2015-01-16_
 
  * New: `--quiet` and `--dry-run` command-line arguments.
  * Fix: Handle an extension registry with zero or only one item.
  * Okio dependency bumped to 1.2.0.
 
 
-Version 1.6.0 *(2014-10-23)*
-----------------------------
+Version 1.6.0
+-------------
+
+_2014-10-23_
 
  * Fix: Correctly throw `IOException` when parsing bad input fails.
  * Fix: Ensure emitted code references to `Arrays.asList` correctly compiles in some edge cases.
  * '__UNDEFINED__' enum value has been removed.
 
 
-Version 1.5.2 *(2014-09-15)*
-----------------------------
+Version 1.5.2
+-------------
+
+_2014-09-15_
 
  * New: '__UNDEFINED__' enum value represents values that the generated code is unable to handle.
  * New: Service writer implementation can now be specified on the command-line.
 
 
-Version 1.5.1 *(2014-06-18)*
-----------------------------
+Version 1.5.1
+-------------
+
+_2014-06-18_
 
  * New: Generate interface definition for a `Service` with a partial list of methods.
  * Okio dependency bumped to 1.0.0.
 
 
-Version 1.5.0 *(2014-04-22)*
-----------------------------
+Version 1.5.0
+-------------
+
+_2014-04-22_
 
  * New: Options on enums and enum values are now supported.
  * New: Options ending with `.redacted` on fields will omit values from `toString`.
@@ -355,8 +516,10 @@ Version 1.5.0 *(2014-04-22)*
  * Okio dependency bumped to 0.9.0.
 
 
-Version 1.4.0 *(2014-04-22)*
-----------------------------
+Version 1.4.0
+-------------
+
+_2014-04-22_
 
  * Replace Wire's ByteString class with the one from Okio (https://github.com/square/okio).
    **This is a breaking API change**.
@@ -372,29 +535,37 @@ Version 1.4.0 *(2014-04-22)*
  * Fix a bug where no some extension dependencies were not detected.
 
 
-Version 1.3.3 *(2014-03-28)*
-----------------------------
+Version 1.3.3
+-------------
+
+_2014-03-28_
 
  * New: Support service declarations as roots. The request and response types of their methods will
    be included.
 
 
-Version 1.3.2 *(2014-03-27)*
-----------------------------
+Version 1.3.2
+-------------
+
+_2014-03-27_
 
  * Fix: Enum value duplicate check now correctly looks at names instead of values.
 
 
-Version 1.3.1 *(2014-03-25)*
-----------------------------
+Version 1.3.1
+-------------
+
+_2014-03-25_
 
  * New: Automatically add Maven plugin's generated source as a compilation root.
  * Fix: Correct Maven plugin's 'no arguments' flag to work properly.
  * Fix: Support extend declarations nested inside message types.
 
 
-Version 1.3.0 *(2014-03-21)*
-----------------------------
+Version 1.3.0
+-------------
+
+_2014-03-21_
 
  * New: Empty repeated fields are now initialized to an empty collection.
  * New: Emit field options. Use `--no_options` flag to disable.
@@ -404,23 +575,28 @@ Version 1.3.0 *(2014-03-21)*
 
 Note: This version is not backwards compatible with code generated from previous versions.
 
+Version 1.2.0
+-------------
 
-Version 1.2.0 *(2013-11-01)*
-----------------------------
+_2013-11-01_
 
  * New: `--registry_class` compiler argument emits a class with a list of extensions suitable for
    passing to the `Wire` constructor.
  * Fix: Ensure all trailing whitespace is trimmed on documentation.
 
 
-Version 1.1.1 *(2013-10-23)*
-----------------------------
+Version 1.1.1
+-------------
+
+_2013-10-23_
 
  * Fix: Correct parsing and emission of multi-line documentation.
 
 
-Version 1.1.0 *(2013-10-22)*
-----------------------------
+Version 1.1.0
+-------------
+
+_2013-10-22_
 
  * New: Support for message options.
  * New: Check for duplicate field tag numbers.
@@ -431,15 +607,19 @@ Version 1.1.0 *(2013-10-22)*
  * Fix: Avoid shadowing fields named "result", "other", or "o".
 
 
-Version 1.0.1 *(2013-08-27)*
-----------------------------
+Version 1.0.1
+-------------
+
+_2013-08-27_
 
  * New: Support reading directly from `InputStream`.
  * New: Add '`other == this`' shortcut in generated `equals()` methods.
 
 
-Version 1.0.0 *(2013-08-23)*
-----------------------------
+Version 1.0.0
+-------------
+
+_2013-08-23_
 
 Initial version.
 

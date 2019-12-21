@@ -62,9 +62,9 @@ public final class RepeatedPackedAndMap extends Message<RepeatedPackedAndMap, Re
   @Override
   public Builder newBuilder() {
     Builder builder = new Builder();
-    builder.rep_int32 = Internal.copyOf("rep_int32", rep_int32);
-    builder.pack_int32 = Internal.copyOf("pack_int32", pack_int32);
-    builder.map_int32_int32 = Internal.copyOf("map_int32_int32", map_int32_int32);
+    builder.rep_int32 = Internal.copyOf(rep_int32);
+    builder.pack_int32 = Internal.copyOf(pack_int32);
+    builder.map_int32_int32 = Internal.copyOf(map_int32_int32);
     builder.addUnknownFields(unknownFields());
     return builder;
   }
@@ -173,13 +173,11 @@ public final class RepeatedPackedAndMap extends Message<RepeatedPackedAndMap, Re
           case 301: builder.pack_int32.add(ProtoAdapter.INT32.decode(reader)); break;
           case 401: builder.map_int32_int32.putAll(map_int32_int32.decode(reader)); break;
           default: {
-            FieldEncoding fieldEncoding = reader.peekFieldEncoding();
-            Object value = fieldEncoding.rawProtoAdapter().decode(reader);
-            builder.addUnknownField(tag, fieldEncoding, value);
+            reader.readUnknownField(tag);
           }
         }
       }
-      reader.endMessage(token);
+      builder.addUnknownFields(reader.endMessageAndGetUnknownFields(token));
       return builder.build();
     }
 

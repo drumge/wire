@@ -15,7 +15,6 @@
  */
 package com.squareup.wire
 
-import com.squareup.wire.ProtoAdapterJvm.encode
 import okio.Buffer
 import okio.BufferedSink
 import okio.ByteString
@@ -25,26 +24,31 @@ import java.io.OutputStream
 import java.io.Serializable
 
 /** A protocol buffer message. */
-actual abstract class Message<M : Message<M, B>, B : Message.Builder<M, B>> protected constructor(
-  @field:Transient private val adapter: ProtoAdapter<M>,
-  /** Unknown fields, proto-encoded. We permit null to support magic deserialization. */
-  @field:Transient private val unknownFields: ByteString?
+actual abstract class Message<M : Message<M, B>, B : Message.Builder<M, B>>
+protected actual constructor(
+  /** The [ProtoAdapter] for encoding and decoding messages of this type. */
+  @field:Transient @get:JvmName("adapter") actual val adapter: ProtoAdapter<M>,
+  unknownFields: ByteString
 ) : Serializable {
+  /**
+   * Returns a byte string containing the proto encoding of this message's unknown fields. Returns
+   * an empty byte string if this message has no unknown fields.
+   */
+  @field:Transient @get:JvmName("unknownFields")
+  actual val unknownFields: ByteString = unknownFields
+    get() {
+      // Some naughty libraries construct Messages by reflection which causes this non-null field
+      // to have a null value. We defend against this with an otherwise-redundant null check.
+      @Suppress("SENSELESS_COMPARISON")
+      if (field == null) return ByteString.EMPTY
+      return field
+    }
+
   /** If not `0` then the serialized size of this message. */
   @Transient internal var cachedSerializedSize = 0
 
   /** If non-zero, the hash code of this message. Accessed by generated code. */
   @Transient @JvmField protected actual var hashCode = 0
-
-  init {
-    if (unknownFields == null) throw NullPointerException("unknownFields == null")
-  }
-
-  /**
-   * Returns a byte string containing the proto encoding of this message's unknown fields. Returns
-   * an empty byte string if this message has no unknown fields.
-   */
-  actual fun unknownFields(): ByteString = unknownFields ?: ByteString.EMPTY
 
   /**
    * Returns a new builder initialized with the data in this message.
@@ -52,15 +56,12 @@ actual abstract class Message<M : Message<M, B>, B : Message.Builder<M, B>> prot
   actual abstract fun newBuilder(): B
 
   /** Returns this message with any unknown fields removed. */
-  actual fun withoutUnknownFields(): M = newBuilder().clearUnknownFields().build()
+  fun withoutUnknownFields(): M = newBuilder().clearUnknownFields().build()
 
   override fun toString(): String = adapter.toString(this as M)
 
   @Throws(ObjectStreamException::class)
   protected fun writeReplace(): Any = MessageSerializedForm(encode(), javaClass as Class<M>)
-
-  /** The [ProtoAdapter] for encoding and decoding messages of this type. */
-  actual fun adapter(): ProtoAdapter<M> = adapter
 
   /** Encode this message and write it to `stream`. */
   @Throws(IOException::class)

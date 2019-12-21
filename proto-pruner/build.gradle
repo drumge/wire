@@ -2,9 +2,6 @@ apply plugin: 'application'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'com.github.johnrengelman.shadow'
 
-sourceCompatibility = JavaVersion.VERSION_1_8
-targetCompatibility = JavaVersion.VERSION_1_8
-
 mainClassName = 'com.squareup.wire.prune.ProtoPruner'
 
 jar {
@@ -14,9 +11,12 @@ jar {
 }
 
 dependencies {
+  implementation project(':wire-compiler')
   implementation project(':wire-schema')
   implementation deps.kotlin.stdlib.jdk8
   implementation deps.guava
+  testImplementation deps.assertj
+  testImplementation deps.junit
 }
 
 shadowJar {
@@ -34,3 +34,10 @@ artifacts {
 shadowDistTar.enabled = false
 shadowDistZip.enabled = false
 configurations.archives.artifacts.removeAll { it.file =~ 'tar' || it.file =~ 'zip' }
+
+test {
+  testLogging {
+    events "passed", "skipped", "failed"
+    exceptionFormat "full"
+  }
+}

@@ -1,31 +1,31 @@
 apply plugin: 'org.jetbrains.kotlin.multiplatform'
 
 kotlin {
-  jvm()
-//  js() {
-//    configure([compilations.main, compilations.test]) {
-//      tasks.getByName(compileKotlinTaskName).kotlinOptions {
-//        moduleKind = 'umd'
-//        sourceMap = true
-//        metaInfo = true
-//      }UtilKt
-//    }
-//  }
-//  iosX64() {
-//    binaries {
-//      framework()
-//    }
-//  }
-//  iosArm64() {
-//    binaries {
-//      framework()
-//    }
-//  }
+  jvm {
+    withJava()
+  }
+  js {
+    configure([compilations.main, compilations.test]) {
+      tasks.getByName(compileKotlinTaskName).kotlinOptions {
+        moduleKind = 'umd'
+        sourceMap = true
+        metaInfo = true
+      }
+    }
+    nodejs()
+    browser()
+  }
+  iosX64()
+  iosArm64()
   // Required to generate tests tasks: https://youtrack.jetbrains.com/issue/KT-26547
-//  linuxX64()
-//  macosX64()
-//  mingwX64('winX64')
+  linuxX64()
+  macosX64()
   sourceSets {
+    all {
+      languageSettings {
+        useExperimentalAnnotation("kotlin.Experimental")
+      }
+    }
     commonMain {
       dependencies {
         api deps.kotlin.stdlib.common
@@ -67,10 +67,10 @@ kotlin {
       dependsOn commonTest
     }
 
-    configure([iosX64Main, iosArm64Main, linuxX64Main, macosX64Main, winX64Main]) {
+    configure([iosX64Main, iosArm64Main, linuxX64Main, macosX64Main]) {
       dependsOn nativeMain
     }
-    configure([iosX64Test, iosArm64Test, linuxX64Test, macosX64Test, winX64Test]) {
+    configure([iosX64Test, iosArm64Test, linuxX64Test, macosX64Test]) {
       dependsOn nativeTest
     }
   }
@@ -95,3 +95,15 @@ repositories.whenObjectAdded {
 
 apply from: 'jvm.gradle'
 apply from: "$rootDir/gradle/gradle-mvn-mpp-push.gradle"
+
+publishing {
+  // Use default artifact name for the JVM target
+  publications {
+    kotlinMultiplatform {
+      artifactId = 'wire-runtime-multiplatform'
+    }
+    jvm {
+      artifactId = 'wire-runtime'
+    }
+  }
+}

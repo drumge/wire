@@ -2,9 +2,6 @@ apply plugin: 'application'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'com.github.johnrengelman.shadow'
 
-sourceCompatibility = JavaVersion.VERSION_1_8
-targetCompatibility = JavaVersion.VERSION_1_8
-
 mainClassName = 'com.squareup.wire.WireCompiler'
 
 jar {
@@ -16,14 +13,15 @@ jar {
 dependencies {
   api deps.kotlin.stdlib.jdk8
   api project(':wire-schema')
+  api project(':wire-kotlin-generator')
   implementation project(':wire-java-generator')
-  implementation project(':wire-kotlin-generator')
   implementation deps.okio.jvm
   implementation deps.guava
   testImplementation deps.junit
   testImplementation deps.assertj
   testImplementation deps.jimfs
   testImplementation deps.kotlin.test.junit
+  testImplementation project(':wire-test-utils')
 }
 
 shadowJar {

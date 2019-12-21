@@ -72,8 +72,8 @@ public final class ProfileLoader {
 
   public Profile load() throws IOException {
     Set<Location> protoLocations = new LinkedHashSet<>();
-    for (ProtoFile protoFile : schema.protoFiles()) {
-      protoLocations.add(protoFile.location());
+    for (ProtoFile protoFile : schema.getProtoFiles()) {
+      protoLocations.add(protoFile.getLocation());
     }
     Multimap<Path, String> pathsToAttempt = pathsToAttempt(protoLocations);
 
@@ -150,6 +150,7 @@ public final class ProfileLoader {
   }
 
   /** Confirms that {@code protoFiles} link correctly against {@code schema}. */
+  @Deprecated
   void validate(Schema schema, ImmutableList<ProfileFileElement> profileFiles) {
     List<String> errors = new ArrayList<>();
 
@@ -165,7 +166,7 @@ public final class ProfileLoader {
           continue;
         }
 
-        String requiredImport = resolvedType.location().getPath();
+        String requiredImport = resolvedType.getLocation().getPath();
         if (!profileFile.getImports().contains(requiredImport)) {
           errors.add(String.format("%s needs to import %s (%s)",
               typeConfig.getLocation().getPath(), requiredImport, typeConfig.getLocation()));
@@ -179,9 +180,10 @@ public final class ProfileLoader {
   }
 
   /** Returns the type to import for {@code type}. */
+  @Deprecated
   private @Nullable ProtoType importedType(ProtoType type) {
     // Map key type is always scalar.
-    if (type.isMap()) type = type.valueType();
+    if (type.isMap()) type = type.getValueType();
     return type.isScalar() ? null : type;
   }
 

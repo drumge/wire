@@ -13,11 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+@file:Suppress("UsePropertyAccessSyntax")
+
 package com.squareup.wire.schema
 
-import com.squareup.wire.schema.Options.FIELD_OPTIONS
-import com.squareup.wire.schema.Options.MESSAGE_OPTIONS
+import com.squareup.wire.schema.Options.Companion.FIELD_OPTIONS
+import com.squareup.wire.schema.Options.Companion.MESSAGE_OPTIONS
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.Ignore
 import org.junit.Test
 
 class PrunerTest {
@@ -32,10 +35,10 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .build())
-    assertThat(pruned.getType("MessageA")).isNotNull
+    assertThat(pruned.getType("MessageA")).isNotNull()
     assertThat(pruned.getType("MessageB")).isNull()
   }
 
@@ -50,11 +53,11 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .build())
-    assertThat(pruned.getType("MessageA")).isNotNull
-    assertThat(pruned.getField(ProtoMember.get("MessageA#maps"))).isNotNull
+    assertThat(pruned.getType("MessageA")).isNotNull()
+    assertThat(pruned.getField(ProtoMember.get("MessageA#maps"))).isNotNull()
   }
 
   @Test
@@ -68,11 +71,11 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .exclude("MessageA#maps")
         .build())
-    assertThat(pruned.getType("MessageA")).isNotNull
+    assertThat(pruned.getType("MessageA")).isNotNull()
     assertThat(pruned.getField(ProtoMember.get("MessageA#maps"))).isNull()
   }
 
@@ -90,7 +93,7 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("A.B")
         .build())
     assertThat(pruned.getType("A")).isInstanceOf(EnclosingType::class.java)
@@ -115,12 +118,12 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .build())
-    assertThat(pruned.getType("MessageA")).isNotNull
-    assertThat(pruned.getType("MessageB")).isNotNull
-    assertThat(pruned.getType("MessageC")).isNotNull
+    assertThat(pruned.getType("MessageA")).isNotNull()
+    assertThat(pruned.getType("MessageB")).isNotNull()
+    assertThat(pruned.getType("MessageC")).isNotNull()
     assertThat(pruned.getType("MessageD")).isNull()
   }
 
@@ -142,12 +145,12 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Service#CallA")
         .build())
-    assertThat(pruned.getService("Service").rpc("CallA")).isNotNull
-    assertThat(pruned.getType("RequestA")).isNotNull
-    assertThat(pruned.getType("ResponseA")).isNotNull
+    assertThat(pruned.getService("Service").rpc("CallA")).isNotNull()
+    assertThat(pruned.getType("RequestA")).isNotNull()
+    assertThat(pruned.getType("ResponseA")).isNotNull()
     assertThat(pruned.getService("Service").rpc("CallB")).isNull()
     assertThat(pruned.getType("RequestB")).isNull()
     assertThat(pruned.getType("ResponseB")).isNull()
@@ -165,10 +168,10 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA#b")
         .build())
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("c")).isNull()
     assertThat(pruned.getType("MessageB")).isNull()
   }
@@ -190,15 +193,38 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA#b")
         .build())
-    assertThat(pruned.getType("MessageA")).isNotNull
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
+    assertThat(pruned.getType("MessageA")).isNotNull()
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("d")).isNull()
-    assertThat(pruned.getType("MessageB")).isNotNull
-    assertThat(pruned.getType("MessageC")).isNotNull
+    assertThat(pruned.getType("MessageB")).isNotNull()
+    assertThat(pruned.getType("MessageC")).isNotNull()
     assertThat(pruned.getType("MessageD")).isNull()
+  }
+
+  @Test
+  fun oneOf() {
+    val schema = RepoBuilder()
+        .add("one_of_message.proto", """
+             |package oneof;
+             |
+             |message OneOfMessage {
+             |  oneof choice {
+             |    int32 foo = 1;
+             |    string bar = 3;
+             |    string baz = 4;
+             |  }
+             |}
+             """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("oneof.OneOfMessage")
+        .build())
+    val oneOfs = (pruned.getType("oneof.OneOfMessage") as MessageType).oneOfs
+    assertThat(oneOfs).isNotEmpty()
+    assertThat(oneOfs.first().fields).hasSize(3)
   }
 
   @Test
@@ -214,10 +240,10 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message#c")
         .build())
-    assertThat((pruned.getType("Message") as MessageType).oneOfs()).isEmpty()
+    assertThat((pruned.getType("Message") as MessageType).oneOfs).isEmpty()
   }
 
   @Test
@@ -233,13 +259,13 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message#b")
         .build())
     val message = pruned.getType("Message") as MessageType
-    val onlyOneOf = message.oneOfs().single()
-    assertThat(onlyOneOf.name()).isEqualTo("selection")
-    assertThat(onlyOneOf.fields().single().name()).isEqualTo("b")
+    val onlyOneOf = message.oneOfs.single()
+    assertThat(onlyOneOf.name).isEqualTo("selection")
+    assertThat(onlyOneOf.fields.single().name).isEqualTo("b")
     assertThat(message.field("a")).isNull()
     assertThat(message.field("c")).isNull()
   }
@@ -261,16 +287,16 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA#b")
         .include("MessageB#c")
         .build())
-    assertThat(pruned.getType("MessageA")).isNotNull
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
-    assertThat(pruned.getType("MessageB")).isNotNull
-    assertThat((pruned.getType("MessageB") as MessageType).field("c")).isNotNull
+    assertThat(pruned.getType("MessageA")).isNotNull()
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
+    assertThat(pruned.getType("MessageB")).isNotNull()
+    assertThat((pruned.getType("MessageB") as MessageType).field("c")).isNotNull()
     assertThat((pruned.getType("MessageB") as MessageType).field("d")).isNull()
-    assertThat(pruned.getType("MessageC")).isNotNull
+    assertThat(pruned.getType("MessageC")).isNotNull()
     assertThat(pruned.getType("MessageD")).isNull()
   }
 
@@ -285,11 +311,11 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Roshambo#SCISSORS")
         .build())
     assertThat((pruned.getType("Roshambo") as EnumType).constant("ROCK")).isNull()
-    assertThat((pruned.getType("Roshambo") as EnumType).constant("SCISSORS")).isNotNull
+    assertThat((pruned.getType("Roshambo") as EnumType).constant("SCISSORS")).isNotNull()
     assertThat((pruned.getType("Roshambo") as EnumType).constant("PAPER")).isNull()
   }
 
@@ -307,15 +333,15 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message")
         .include("Roshambo#SCISSORS")
         .build())
-    assertThat(pruned.getType("Message")).isNotNull
-    assertThat((pruned.getType("Message") as MessageType).field("roshambo")).isNotNull
-    assertThat(pruned.getType("Roshambo")).isNotNull
+    assertThat(pruned.getType("Message")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).field("roshambo")).isNotNull()
+    assertThat(pruned.getType("Roshambo")).isNotNull()
     assertThat((pruned.getType("Roshambo") as EnumType).constant("ROCK")).isNull()
-    assertThat((pruned.getType("Roshambo") as EnumType).constant("SCISSORS")).isNotNull
+    assertThat((pruned.getType("Roshambo") as EnumType).constant("SCISSORS")).isNotNull()
     assertThat((pruned.getType("Roshambo") as EnumType).constant("PAPER")).isNull()
   }
 
@@ -332,15 +358,15 @@ class PrunerTest {
             |}
             """.trimMargin())
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message#f")
         .build())
-    assertThat((pruned.getType("Message") as MessageType).field("f")).isNotNull
-    assertThat(pruned.getType("google.protobuf.FieldOptions") as MessageType).isNotNull
+    assertThat((pruned.getType("Message") as MessageType).field("f")).isNotNull()
+    assertThat(pruned.getType("google.protobuf.FieldOptions") as MessageType).isNotNull()
   }
 
   @Test
-  fun prunedOptionDoesNotRetainOptionsType() {
+  fun prunedExtensionOptionDoesNotRetainExtension() {
     val schema = RepoBuilder()
         .add("service.proto", """
               |import "google/protobuf/descriptor.proto";
@@ -354,10 +380,15 @@ class PrunerTest {
               """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message#g")
         .build())
-    assertThat(pruned.getType("google.protobuf.FieldOptions") as MessageType?).isNull()
+
+    val fieldOptions = pruned.getType("google.protobuf.FieldOptions") as MessageType
+    assertThat(fieldOptions.extensionField("a")).isNull()
+
+    val service = pruned.protoFile("service.proto")
+    assertThat(service.extendList).isEmpty()
   }
 
   @Test
@@ -379,13 +410,13 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message")
         .include("SomeFieldOptions#b")
         .build())
-    assertThat((pruned.getType("Message") as MessageType).field("f")).isNotNull
-    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("a")).isNotNull
-    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("b")).isNotNull
+    assertThat((pruned.getType("Message") as MessageType).field("f")).isNotNull()
+    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("a")).isNotNull()
+    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("b")).isNotNull()
     assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("c")).isNull()
   }
 
@@ -408,13 +439,13 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message")
         .build())
-    assertThat((pruned.getType("Message") as MessageType).field("f")).isNotNull
-    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("a")).isNotNull
-    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("b")).isNotNull
-    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("c")).isNotNull
+    assertThat((pruned.getType("Message") as MessageType).field("f")).isNotNull()
+    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("a")).isNotNull()
+    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("b")).isNotNull() // TODO
+    assertThat((pruned.getType("SomeFieldOptions") as MessageType).field("c")).isNotNull()
   }
 
   @Test
@@ -430,11 +461,11 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message")
         .build())
-    assertThat((pruned.getType("Message") as MessageType).field("a")).isNotNull
-    assertThat((pruned.getType("Message") as MessageType).extensionField("b")).isNotNull
+    assertThat((pruned.getType("Message") as MessageType).field("a")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("b")).isNotNull()
   }
 
   @Test
@@ -448,18 +479,106 @@ class PrunerTest {
              |extend Message {
              |  optional string c = 3;
              |  optional string d = 4;
+             |  repeated string e = 5;
              |}
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Message#a")
         .include("Message#c")
         .build())
-    assertThat((pruned.getType("Message") as MessageType).field("a")).isNotNull
+    assertThat((pruned.getType("Message") as MessageType).field("a")).isNotNull()
     assertThat((pruned.getType("Message") as MessageType).field("b")).isNull()
-    assertThat((pruned.getType("Message") as MessageType).extensionField("c")).isNotNull
+    assertThat((pruned.getType("Message") as MessageType).extensionField("c")).isNotNull()
     assertThat((pruned.getType("Message") as MessageType).extensionField("d")).isNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("e")).isNull()
+  }
+
+  @Test
+  fun retainingTypeRetainsExtensionMembers() {
+    val schema = RepoBuilder()
+        .add("service.proto", """
+             |message Message {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |}
+             |extend Message {
+             |  optional string c = 3;
+             |  optional string d = 4;
+             |  repeated string e = 5;
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message")
+        .build())
+    assertThat((pruned.getType("Message") as MessageType).field("a")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).field("b")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("c")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("d")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("e")).isNotNull()
+  }
+
+  @Test
+  fun includeExtensionMemberPrunesPeerMembers() {
+    val schema = RepoBuilder()
+        .add("service.proto", """
+             |message Message {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |}
+             |extend Message {
+             |  optional string c = 3;
+             |  optional string d = 4;
+             |  repeated string e = 5;
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message#c")
+        .build())
+    assertThat((pruned.getType("Message") as MessageType).field("a")).isNull()
+    assertThat((pruned.getType("Message") as MessageType).field("b")).isNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("c")).isNotNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("d")).isNull()
+    assertThat((pruned.getType("Message") as MessageType).extensionField("e")).isNull()
+  }
+
+  @Test
+  fun namespacedExtensionFieldsAreRetained() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+             |package squareup;
+             |
+             |message ExternalMessage {
+             |  extensions 100 to 200;
+             |
+             |  optional float f = 1;
+             |}
+             |
+             |message Message {
+             |  optional string a = 1;
+             |  optional ExternalMessage external_message = 2;
+             |}
+             |
+             |extend ExternalMessage {
+             |  repeated int32 extension_field = 121;
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("squareup.Message")
+        .build())
+    val message = pruned.getType("squareup.Message") as MessageType
+    assertThat(message.field("a")).isNotNull()
+    assertThat(message.field("external_message")).isNotNull()
+    val externalMessage = pruned.getType("squareup.ExternalMessage") as MessageType
+    assertThat(externalMessage.field("f")).isNotNull()
+    assertThat(externalMessage.extensionField("squareup.extension_field")).isNotNull()
   }
 
   /** When we include excludes only, the mark phase is skipped.  */
@@ -474,10 +593,10 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("MessageA#c")
         .build())
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("c")).isNull()
   }
 
@@ -492,11 +611,11 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .exclude("MessageA#c")
         .build())
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("c")).isNull()
   }
 
@@ -515,12 +634,12 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .exclude("MessageC")
         .build())
-    assertThat(pruned.getType("MessageB")).isNotNull
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
+    assertThat(pruned.getType("MessageB")).isNotNull()
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
     assertThat(pruned.getType("MessageC")).isNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("c")).isNull()
   }
@@ -540,12 +659,12 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("ServiceA")
         .exclude("MessageC")
         .build())
-    assertThat(pruned.getType("MessageB")).isNotNull
-    assertThat(pruned.getService("ServiceA").rpc("CallB")).isNotNull
+    assertThat(pruned.getType("MessageB")).isNotNull()
+    assertThat(pruned.getService("ServiceA").rpc("CallB")).isNotNull()
     assertThat(pruned.getType("MessageC")).isNull()
     assertThat(pruned.getService("ServiceA").rpc("CallC")).isNull()
   }
@@ -565,12 +684,12 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("ServiceA")
         .exclude("ServiceA#CallC")
         .build())
-    assertThat(pruned.getType("MessageB")).isNotNull
-    assertThat(pruned.getService("ServiceA").rpc("CallB")).isNotNull
+    assertThat(pruned.getType("MessageB")).isNotNull()
+    assertThat(pruned.getService("ServiceA").rpc("CallB")).isNotNull()
     assertThat(pruned.getType("MessageC")).isNull()
     assertThat(pruned.getService("ServiceA").rpc("CallC")).isNull()
   }
@@ -593,13 +712,13 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("MessageA")
         .exclude("MessageA#c")
         .exclude("MessageA#d")
         .build())
-    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull
-    assertThat(pruned.getType("MessageB")).isNotNull
+    assertThat((pruned.getType("MessageA") as MessageType).field("b")).isNotNull()
+    assertThat(pruned.getType("MessageB")).isNotNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("c")).isNull()
     assertThat(pruned.getType("MessageC")).isNull()
     assertThat((pruned.getType("MessageA") as MessageType).field("d")).isNull()
@@ -624,11 +743,11 @@ class PrunerTest {
               """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("Enum")
         .exclude("Enum#B")
         .build())
-    assertThat((pruned.getType("Enum") as EnumType).constant("A")).isNotNull
+    assertThat((pruned.getType("Enum") as EnumType).constant("A")).isNotNull()
     assertThat((pruned.getType("Enum") as EnumType).constant("B")).isNull()
     assertThat(pruned.getType("Message")).isNull()
   }
@@ -648,12 +767,12 @@ class PrunerTest {
               """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("google.protobuf.FieldOptions#b")
         .build())
     val field = (pruned.getType("Message") as MessageType).field("f")!!
-    assertThat(field.options().get(ProtoMember.get(FIELD_OPTIONS, "a"))).isEqualTo("a")
-    assertThat(field.options().get(ProtoMember.get(FIELD_OPTIONS, "b"))).isNull()
+    assertThat(field.options.get(ProtoMember.get(FIELD_OPTIONS, "a"))).isEqualTo("a")
+    assertThat(field.options.get(ProtoMember.get(FIELD_OPTIONS, "b"))).isNull()
   }
 
   @Test
@@ -674,13 +793,13 @@ class PrunerTest {
               """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("SomeFieldOptions")
         .build())
     val field = (pruned.getType("Message") as MessageType).field("f")
-    val map = field!!.options().map()
+    val map = field!!.options.map
     val onlyOption = map.entries.single()
-    assertThat((onlyOption.key as ProtoMember).member()).isEqualTo("b")
+    assertThat(onlyOption.key.member).isEqualTo("b")
     assertThat(onlyOption.value).isEqualTo("b")
   }
 
@@ -702,15 +821,60 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("SomeFieldOptions#b")
         .build())
     val field = (pruned.getType("Message") as MessageType).field("f")
-    val map = field!!.options().get(
+    val map = field!!.options.get(
         ProtoMember.get(FIELD_OPTIONS, "some_field_options")) as Map<*, *>
     val onlyOption = map.entries.single()
-    assertThat((onlyOption.key as ProtoMember).member()).isEqualTo("a")
+    assertThat((onlyOption.key as ProtoMember).member).isEqualTo("a")
     assertThat(onlyOption.value).isEqualTo("a")
+  }
+
+  @Test @Ignore("Need to fix #1264.")
+  fun prunedFieldDocumentationsGetPrunedWhenDocumentationIsOnTheSameLine() {
+    val schema = RepoBuilder()
+        .add("period.proto", """
+             |enum Period {
+             |  A = 1; // This is A.
+             |
+             |  reserved 2; // This is reserved.
+             |
+             |  C = 3; // This is C.
+             |}
+             """.trimMargin())
+        .schema()
+
+    val pruned = schema.prune(PruningRules.Builder().build())
+
+    val type = pruned.getType("Period") as EnumType
+    assertThat(type.constant("A")!!.documentation).isEqualTo("This is A.")
+    assertThat(type.constant("C")!!.documentation).isEqualTo("This is C.")
+  }
+
+  @Test
+  fun prunedFieldDocumentationsGetPruned() {
+    val schema = RepoBuilder()
+        .add("period.proto", """
+             |enum Period {
+             |  /* This is A. */
+             |  A = 1;
+             |
+             |  /* This is reserved. */
+             |  reserved 2;
+             |
+             |  /* This is C. */
+             |  C = 3;
+             |}
+             """.trimMargin())
+        .schema()
+
+    val pruned = schema.prune(PruningRules.Builder().build())
+
+    val type = pruned.getType("Period") as EnumType
+    assertThat(type.constant("A")!!.documentation).isEqualTo("This is A.")
+    assertThat(type.constant("C")!!.documentation).isEqualTo("This is C.")
   }
 
   @Test
@@ -740,13 +904,13 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("Dimensions")
         .build())
     val field = (pruned.getType("Message") as MessageType).field("f")
-    val map = field!!.options().map()
+    val map = field!!.options.map
     val onlyOption = map.entries.single()
-    assertThat((onlyOption.key as ProtoMember).member()).isEqualTo("b")
+    assertThat(onlyOption.key.member).isEqualTo("b")
     assertThat(onlyOption.value).isEqualTo("b")
   }
 
@@ -765,11 +929,11 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("google.protobuf.FieldOptions")
         .build())
     val field = (pruned.getType("Message") as MessageType).field("f")
-    assertThat(field!!.options().map()).isEmpty()
+    assertThat(field!!.options.map).isEmpty()
   }
 
   @Test
@@ -791,12 +955,12 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("google.protobuf.MessageOptions#a")
         .build())
     val message = pruned.getType("Message") as MessageType
-    assertThat(message.options().get(ProtoMember.get(MESSAGE_OPTIONS, "a"))).isNull()
-    assertThat(message.options().get(ProtoMember.get(MESSAGE_OPTIONS, "b")))
+    assertThat(message.options.get(ProtoMember.get(MESSAGE_OPTIONS, "a"))).isNull()
+    assertThat(message.options.get(ProtoMember.get(MESSAGE_OPTIONS, "b")))
         .isEqualTo(listOf("b1", "b2"))
   }
 
@@ -816,10 +980,10 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .include("a.b.*")
         .build())
-    assertThat(pruned.getType("a.b.MessageAB")).isNotNull
+    assertThat(pruned.getType("a.b.MessageAB")).isNotNull()
     assertThat(pruned.getType("a.c.MessageAC")).isNull()
   }
 
@@ -839,10 +1003,10 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("a.c.*")
         .build())
-    assertThat(pruned.getType("a.b.MessageAB")).isNotNull
+    assertThat(pruned.getType("a.b.MessageAB")).isNotNull()
     assertThat(pruned.getType("a.c.MessageAC")).isNull()
   }
 
@@ -863,7 +1027,7 @@ class PrunerTest {
              """.trimMargin()
         )
         .schema()
-    val pruned = schema.prune(IdentifierSet.Builder()
+    val pruned = schema.prune(PruningRules.Builder()
         .exclude("google.protobuf.*")
         .build())
     val protoFile = pruned.protoFile("message.proto")
@@ -877,5 +1041,499 @@ class PrunerTest {
 
     val enumType = pruned.getType("Enum") as EnumType
     assertThat(enumType.allowAlias()).isTrue()
+  }
+
+  @Test
+  fun excludeUnusedImports() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+             |import 'footer.proto';
+             |import 'title.proto';
+             |
+             |message Message {
+             |  optional Title title = 1;
+             |}
+             """.trimMargin()
+        )
+        .add("title.proto", """
+             |message Title {
+             |  optional string label = 1;
+             |}
+             """.trimMargin()
+        )
+        .add("footer.proto", """
+             |message Footer {
+             |  optional string label = 1;
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message")
+        .build())
+
+    assertThat(pruned.protoFile("footer.proto").types).isEmpty()
+    assertThat(pruned.protoFile("title.proto").types).isNotEmpty
+
+    val message = pruned.protoFile("message.proto")
+    assertThat(message.imports).containsExactly("title.proto")
+  }
+
+  @Test
+  fun enumsAreKeptsIfUsed() {
+    val schema = RepoBuilder()
+        .add("currency_code.proto", """
+             |import "google/protobuf/descriptor.proto";
+             |
+             |enum RoundingMode {
+             |  PLAIN = 0;
+             |  DOWN = 1;
+             |  UP = 2;
+             |  BANKERS = 3;
+             |  DOWN_ON_HALF = 4;
+             |}
+             |
+             |extend google.protobuf.EnumValueOptions {
+             |  optional int32 cash_rounding = 54000;
+             |  optional RoundingMode rounding_mode = 54002;
+             |}
+             |
+             |enum CurrencyCode {
+             |  AFN = 971;
+             |  ANG = 532;
+             |  NZD = 554 [(cash_rounding) = 10, (rounding_mode) = DOWN_ON_HALF];
+             |}
+             |
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("CurrencyCode")
+        .build())
+
+    assertThat(pruned.getType("RoundingMode")).isNotNull()
+  }
+
+  /**
+   * When an extension field is reached via an option, consider only that option to be reachable.
+   * Do not recursively mark the other extensions.
+   */
+  @Test
+  fun markingExtensionFieldDoesNotMarkPeerFields() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+             |import "google/protobuf/descriptor.proto";
+             |
+             |extend google.protobuf.FieldOptions {
+             |  optional string a = 54000;
+             |  optional string b = 54001;
+             |}
+             |
+             |message Message {
+             |  optional string s = 1 [a = "a"];
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message")
+        .build())
+
+    val fieldOptions = pruned.getType("google.protobuf.FieldOptions") as MessageType
+    assertThat(fieldOptions.extensionField("a")).isNotNull()
+    assertThat(fieldOptions.extensionField("b")).isNull()
+  }
+
+  /**
+   * When a message type is reached via an option, consider the entire type to be reachable.
+   * Recursively mark the message's other fields.
+   */
+  @Test
+  fun markingNonExtensionFieldDoesMarkPeerFields() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+             |import "google/protobuf/descriptor.proto";
+             |
+             |extend google.protobuf.FieldOptions {
+             |  optional MessageOption message_option = 54000;
+             |}
+             |
+             |message MessageOption {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |}
+             |
+             |message Message {
+             |  optional string s = 1 [message_option.a = "a"];
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message")
+        .build())
+
+    val messageOption = pruned.getType("MessageOption") as MessageType
+    assertThat(messageOption.field("a")).isNotNull()
+    assertThat(messageOption.field("b")).isNotNull()
+  }
+
+  /**
+   * If we're pruning some members of a message type, reaching a different member via an option is
+   * not sufficient to cause the entire message to be reachable.
+   */
+  @Test
+  fun markingNonExtensionFieldDoesMarkPeerFieldsIfTypesMembersAreBeingPruned() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+             |import "google/protobuf/descriptor.proto";
+             |
+             |extend google.protobuf.FieldOptions {
+             |  optional MessageOption message_option = 54000;
+             |}
+             |
+             |message MessageOption {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |  optional string c = 3;
+             |}
+             |
+             |message Message {
+             |  optional string s = 1 [message_option.a = "a"];
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message")
+        .include("MessageOption#c")
+        .build())
+
+    val messageOption = pruned.getType("MessageOption") as MessageType
+    assertThat(messageOption.field("a")).isNotNull()
+    assertThat(messageOption.field("b")).isNull()
+    assertThat(messageOption.field("c")).isNotNull()
+  }
+
+  @Test
+  fun includingFieldDoesNotIncludePeerFields() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+             |message Message {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("Message#a")
+        .build())
+
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("a")).isNotNull()
+    assertThat(message.field("b")).isNull()
+  }
+
+  @Test
+  fun excludingGoogleProtobufPrunesAllOptionsOnEnums() {
+    val schema = RepoBuilder()
+        .add("currency_code.proto", """
+             |package squareup;
+             |
+             |import "google/protobuf/descriptor.proto";
+             |
+             |message MessageOption {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |  optional string c = 3;
+             |}
+             |
+             |enum Style {
+             |  VERBOSE = 0;
+             |  POETIC = 1;
+             |  RUDE = 2;
+             |}
+             |
+             |extend google.protobuf.EnumValueOptions {
+             |  optional int32 max_length = 54000;
+             |  optional MessageOption message_option = 54001;
+             |  optional Style style = 54002;
+             |}
+             |
+             |enum Author {
+             |  ZEUS = 1 [(style) = POETIC, (max_length) = 12];
+             |  ARTEMIS = 2;
+             |  APOLLO = 3 [(style) = RUDE, (message_option) = {a: "some", c: "things"}];
+             |  POSEIDON = 4 [deprecated = true];
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("squareup.Author")
+        .exclude("google.protobuf.*")
+        .build())
+
+    assertThat(pruned.getType("squareup.Style")).isNull()
+    assertThat(pruned.getType("squareup.MessageOption")).isNull()
+    assertThat(pruned.getType("google.protobuf.EnumValueOptions")).isNotNull()
+
+    val authorType = pruned.getType("squareup.Author") as EnumType
+    assertThat(authorType.constant("ZEUS")!!.options.fields().isEmpty()).isTrue()
+    assertThat(authorType.constant("ARTEMIS")!!.options.fields().isEmpty()).isTrue()
+    assertThat(authorType.constant("APOLLO")!!.options.fields().isEmpty()).isTrue()
+    // Options defined in google.protobuf.descriptor.proto are not pruned.
+    assertThat(authorType.constant("POSEIDON")!!.options.fields().values()).hasSize(1)
+  }
+
+  @Test
+  fun excludingGoogleProtobufPrunesAllOptionsOnMessages() {
+    val schema = RepoBuilder()
+        .add("currency_code.proto", """
+             |package squareup;
+             |
+             |import "google/protobuf/descriptor.proto";
+             |
+             |message MessageOption {
+             |  optional string a = 1;
+             |  optional string b = 2;
+             |  optional string c = 3;
+             |}
+             |
+             |enum Style {
+             |  VERBOSE = 0;
+             |  POETIC = 1;
+             |  RUDE = 2;
+             |}
+             |
+             |extend google.protobuf.FieldOptions {
+             |  optional int32 max_length = 54000;
+             |  optional MessageOption message_option = 54001;
+             |  optional Style style = 54002;
+             |}
+             |
+             |message Letter {
+             |  optional string header = 1 [(max_length) = 20];
+             |  optional bool add_margin = 2 [deprecated = true];
+             |  optional string author = 3 [(style) = RUDE, (message_option) = {a: "some", c: "things"}];
+             |  optional string signature = 4 [default = "Sent from Wire"];
+             |}
+             """.trimMargin()
+        )
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .include("squareup.Letter")
+        .exclude("google.protobuf.*")
+        .build())
+
+    assertThat(pruned.getType("squareup.Style")).isNull()
+    assertThat(pruned.getType("squareup.MessageOption")).isNull()
+
+    val enumValueOptions = pruned.getType("google.protobuf.FieldOptions") as MessageType
+    assertThat(enumValueOptions.field("deprecated")).isNotNull()
+
+    val letterType = pruned.getType("squareup.Letter") as MessageType
+    assertThat(letterType.field("header")!!.options.fields().isEmpty()).isTrue()
+
+    // Options defined in google.protobuf.descriptor.proto are not pruned.
+    assertThat(letterType.field("add_margin")!!.options.fields().values()).hasSize(1)
+    assertThat(letterType.field("add_margin")!!.isDeprecated).isTrue()
+
+    assertThat(letterType.field("author")!!.options.fields().isEmpty()).isTrue()
+
+    // Default are not options.
+    assertThat(letterType.field("signature")!!.default).isEqualTo("Sent from Wire")
+    assertThat(letterType.field("signature")!!.options.fields().isEmpty()).isTrue()
+  }
+
+  @Test
+  fun sinceAndUntilRetainOlder() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string radio = 1 [(wire.until) = "1950"];
+            |  optional string video = 2 [(wire.since) = "1950"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("1949")
+        .newest("1949")
+        .build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("radio")).isNotNull()
+    assertThat(message.field("video")).isNull()
+  }
+
+  @Test
+  fun sinceAndUntilRetainNewer() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string radio = 1 [(wire.until) = "1950"];
+            |  optional string video = 2 [(wire.since) = "1950"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("1950")
+        .newest("1950")
+        .build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("radio")).isNull()
+    assertThat(message.field("video")).isNotNull()
+  }
+
+  @Test
+  fun sinceRetainedWhenLessThanOrEqualToNewest() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string since_19 = 1 [(wire.since) = "19"];
+            |  optional string since_20 = 2 [(wire.since) = "20"];
+            |  optional string since_21 = 3 [(wire.since) = "21"];
+            |  
+            |  optional string since_29 = 4 [(wire.since) = "29"];
+            |  optional string since_30 = 5 [(wire.since) = "30"];
+            |  optional string since_31 = 6 [(wire.since) = "31"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("20")
+        .newest("30")
+        .build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("since_19")).isNotNull()
+    assertThat(message.field("since_20")).isNotNull()
+    assertThat(message.field("since_21")).isNotNull()
+
+    assertThat(message.field("since_29")).isNotNull()
+    assertThat(message.field("since_30")).isNotNull()
+    assertThat(message.field("since_31")).isNull()
+  }
+
+  @Test
+  fun untilRetainedWhenGreaterThanOldest() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string until_19 = 1 [(wire.until) = "19"];
+            |  optional string until_20 = 2 [(wire.until) = "20"];
+            |  optional string until_21 = 3 [(wire.until) = "21"];
+            |  
+            |  optional string until_29 = 4 [(wire.until) = "29"];
+            |  optional string until_30 = 5 [(wire.until) = "30"];
+            |  optional string until_31 = 6 [(wire.until) = "31"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("20")
+        .newest("30")
+        .build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("until_19")).isNull()
+    assertThat(message.field("until_20")).isNull()
+    assertThat(message.field("until_21")).isNotNull()
+    assertThat(message.field("until_29")).isNotNull()
+    assertThat(message.field("until_30")).isNotNull()
+    assertThat(message.field("until_31")).isNotNull()
+  }
+
+  @Test
+  fun sinceAndUntilDoNothingWithoutVersionPruning() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string until_20 = 1 [(wire.until) = "20"];
+            |  optional string since_20 = 2 [(wire.since) = "20"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder().build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("since_20")).isNotNull()
+    assertThat(message.field("until_20")).isNotNull()
+  }
+
+  @Test
+  fun versionPruningDoesNotImpactFieldsWithoutSinceAndUntil() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string always = 1;
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("20")
+        .newest("30")
+        .build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("always")).isNotNull()
+  }
+
+  @Test
+  fun sinceUntilOnEnumConstant() {
+    val schema = RepoBuilder()
+        .add("roshambo.proto", """
+            |import "wire/extensions.proto";
+            |
+            |enum Roshambo {
+            |  ROCK = 1 [(wire.until) = "29"];
+            |  SCISSORS = 2 [(wire.since) = "30"];
+            |  PAPER = 3 [(wire.since) = "29"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("29")
+        .newest("29")
+        .build())
+    val enum = pruned.getType("Roshambo") as EnumType
+    assertThat(enum.constant("ROCK")).isNull()
+    assertThat(enum.constant("SCISSORS")).isNull()
+    assertThat(enum.constant("PAPER")).isNotNull()
+  }
+
+  @Test
+  fun semVer() {
+    val schema = RepoBuilder()
+        .add("message.proto", """
+            |import "wire/extensions.proto";
+            |
+            |message Message {
+            |  optional string field_1 = 1 [(wire.until) = "1.0.0-alpha"];
+            |  optional string field_2 = 2 [(wire.until) = "1.0.0-alpha.1"];
+            |  optional string field_3 = 3 [(wire.until) = "1.0.0-alpha.beta"];
+            |  optional string field_4 = 4 [(wire.since) = "1.0.0-beta"];
+            |  optional string field_5 = 5 [(wire.since) = "1.0.0"];
+            |}
+            """.trimMargin())
+        .schema()
+    val pruned = schema.prune(PruningRules.Builder()
+        .oldest("1.0.0-alpha.1")
+        .newest("1.0.0-beta")
+        .build())
+    val message = pruned.getType("Message") as MessageType
+    assertThat(message.field("field_1")).isNull()
+    assertThat(message.field("field_2")).isNull()
+    assertThat(message.field("field_3")).isNotNull()
+    assertThat(message.field("field_4")).isNotNull()
+    assertThat(message.field("field_5")).isNull()
   }
 }

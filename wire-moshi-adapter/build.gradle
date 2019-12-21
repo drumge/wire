@@ -4,9 +4,6 @@ apply plugin: 'java-library'
 apply plugin: 'ru.vyarus.animalsniffer'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 
-sourceCompatibility = JavaVersion.VERSION_1_8
-targetCompatibility = JavaVersion.VERSION_1_8
-
 jar {
   manifest {
     attributes('Automatic-Module-Name': 'wire-moshi-adapter')
@@ -25,8 +22,9 @@ dependencies {
   testImplementation deps.assertj
 }
 
-tasks.withType(KotlinCompile).all {
-  kotlinOptions {
-    jvmTarget = "1.8"
+afterEvaluate { project ->
+  project.tasks.dokka {
+    outputDirectory = "$rootDir/docs/3.x"
+    outputFormat = 'gfm'
   }
 }

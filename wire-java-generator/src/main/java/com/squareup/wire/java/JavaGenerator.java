@@ -39,7 +39,6 @@ import com.squareup.wire.FieldEncoding;
 import com.squareup.wire.Message;
 import com.squareup.wire.ProtoAdapter;
 import com.squareup.wire.ProtoAdapter.EnumConstantNotFoundException;
-import com.squareup.wire.ProtoAdapterJvm;
 import com.squareup.wire.ProtoReader;
 import com.squareup.wire.ProtoWriter;
 import com.squareup.wire.WireEnum;
@@ -72,7 +71,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nullable;
-import kotlin.jvm.JvmClassMappingKt;
 import okio.ByteString;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -112,7 +110,7 @@ public final class JavaGenerator {
 
   private static final Ordering<Field> TAG_ORDERING = Ordering.from(new Comparator<Field>() {
     @Override public int compare(Field o1, Field o2) {
-      return Integer.compare(o1.tag(), o2.tag());
+      return Integer.compare(o1.getTag(), o2.getTag());
     }
   });
 
@@ -162,12 +160,14 @@ public final class JavaGenerator {
           nameAllocator.newName("CREATOR", "CREATOR");
         }
 
-        ImmutableList<Field> fieldsAndOneOfFields = ((MessageType) type).fieldsAndOneOfFields();
+        List<Field> fieldsAndOneOfFields = ((MessageType) type).getFieldsAndOneOfFields();
         Set<String> collidingNames = collidingFieldNames(fieldsAndOneOfFields);
         for (Field field : fieldsAndOneOfFields) {
-          String suggestion = collidingNames.contains(field.name())
-              ? field.qualifiedName()
-              : field.name();
+          String suggestion = collidingNames.contains(field.getName())
+            || schema.getType(field.getQualifiedName()) != null
+            || field.getName().equals(field.getType().getSimpleName())
+              ? field.getQualifiedName()
+              : field.getName();
           nameAllocator.newName(suggestion, field);
         }
 
@@ -177,7 +177,7 @@ public final class JavaGenerator {
         nameAllocator.newName("reader", "reader");
         nameAllocator.newName("writer", "writer");
 
-        for (EnumConstant constant : ((EnumType) type).constants()) {
+        for (EnumConstant constant : ((EnumType) type).getConstants()) {
           nameAllocator.newName(constant.getName(), constant);
         }
       }
@@ -226,12 +226,12 @@ public final class JavaGenerator {
   public static JavaGenerator get(Schema schema) {
     Map<ProtoType, ClassName> nameToJavaName = new LinkedHashMap<>(BUILT_IN_TYPES_MAP);
 
-    for (ProtoFile protoFile : schema.protoFiles()) {
+    for (ProtoFile protoFile : schema.getProtoFiles()) {
       String javaPackage = javaPackage(protoFile);
-      putAll(nameToJavaName, javaPackage, null, protoFile.types());
+      putAll(nameToJavaName, javaPackage, null, protoFile.getTypes());
 
-      for (Service service : protoFile.services()) {
-        ClassName className = ClassName.get(javaPackage, service.type().simpleName());
+      for (Service service : protoFile.getServices()) {
+        ClassName className = ClassName.get(javaPackage, service.type().getSimpleName());
         nameToJavaName.put(service.type(), className);
       }
     }
@@ -243,10 +243,10 @@ public final class JavaGenerator {
       ClassName enclosingClassName, List<Type> types) {
     for (Type type : types) {
       ClassName className = enclosingClassName != null
-          ? enclosingClassName.nestedClass(type.type().simpleName())
-          : ClassName.get(javaPackage, type.type().simpleName());
-      wireToJava.put(type.type(), className);
-      putAll(wireToJava, javaPackage, className, type.nestedTypes());
+          ? enclosingClassName.nestedClass(type.getType().getSimpleName())
+          : ClassName.get(javaPackage, type.getType().getSimpleName());
+      wireToJava.put(type.getType(), className);
+      putAll(wireToJava, javaPackage, className, type.getNestedTypes());
     }
   }
 
@@ -284,15 +284,15 @@ public final class JavaGenerator {
   }
 
   private CodeBlock singleAdapterFor(Field field) {
-    return field.type().isMap()
-        ? CodeBlock.of("$N", field.name())
-        : singleAdapterFor(field.type());
+    return field.getType().isMap()
+        ? CodeBlock.of("$N", field.getName())
+        : singleAdapterFor(field.getType());
   }
 
   private CodeBlock singleAdapterFor(ProtoType type) {
     CodeBlock.Builder result = CodeBlock.builder();
     if (type.isScalar()) {
-      result.add("$T.$L", ADAPTER, type.simpleName().toUpperCase(Locale.US));
+      result.add("$T.$L", ADAPTER, type.getSimpleName().toUpperCase(Locale.US));
     } else if (type.isMap()) {
       throw new IllegalArgumentException("Cannot create single adapter for map type " + type);
     } else {
@@ -320,8 +320,8 @@ public final class JavaGenerator {
     String javaPackage = protoFile.javaPackage();
     if (javaPackage != null) {
       return javaPackage;
-    } else if (protoFile.packageName() != null) {
-      return protoFile.packageName();
+    } else if (protoFile.getPackageName() != null) {
+      return protoFile.getPackageName();
     } else {
       return "";
     }
@@ -333,7 +333,7 @@ public final class JavaGenerator {
 
   EnumConstant enumDefault(ProtoType type) {
     EnumType wireEnum = (EnumType) schema.getType(type);
-    return wireEnum.constants().get(0);
+    return wireEnum.getConstants().get(0);
   }
 
   static TypeName listOf(TypeName type) {
@@ -374,15 +374,15 @@ public final class JavaGenerator {
 
   /** Returns the full name of the class generated for {@code type}. */
   public ClassName generatedTypeName(Type type) {
-    ClassName abstractAdapterName = abstractAdapterName(type.type());
+    ClassName abstractAdapterName = abstractAdapterName(type.getType());
     return abstractAdapterName != null
         ? abstractAdapterName
-        : (ClassName) typeName(type.type());
+        : (ClassName) typeName(type.getType());
   }
 
   /** Returns the generated code for {@code type}, which may be a top-level or a nested type. */
   public TypeSpec generateType(Type type) {
-    AdapterConstant adapterConstant = profile.getAdapter(type.type());
+    AdapterConstant adapterConstant = profile.getAdapter(type.getType());
     if (adapterConstant != null) {
       return generateAdapterForCustomType(type);
     }
@@ -405,14 +405,14 @@ public final class JavaGenerator {
   public TypeSpec generateEnum(EnumType type) {
     NameAllocator nameAllocator = nameAllocators.getUnchecked(type);
     String value = nameAllocator.get("value");
-    ClassName javaType = (ClassName) typeName(type.type());
+    ClassName javaType = (ClassName) typeName(type.getType());
 
     TypeSpec.Builder builder = TypeSpec.enumBuilder(javaType.simpleName())
         .addModifiers(PUBLIC)
         .addSuperinterface(WireEnum.class);
 
-    if (!type.documentation().isEmpty()) {
-      builder.addJavadoc("$L\n", sanitizeJavadoc(type.documentation()));
+    if (!type.getDocumentation().isEmpty()) {
+      builder.addJavadoc("$L\n", sanitizeJavadoc(type.getDocumentation()));
     }
 
     // Output Private tag field
@@ -424,14 +424,15 @@ public final class JavaGenerator {
 
     // Enum constant options, each of which requires a constructor parameter and a field.
     Set<ProtoMember> allOptionFieldsBuilder = new LinkedHashSet<>();
-    for (EnumConstant constant : type.constants()) {
-      for (ProtoMember protoMember : constant.getOptions().map().keySet()) {
+    for (EnumConstant constant : type.getConstants()) {
+      for (ProtoMember protoMember : constant.getOptions().getMap().keySet()) {
         Field optionField = schema.getField(protoMember);
         if (allOptionFieldsBuilder.add(protoMember)) {
-          TypeName optionJavaType = typeName(optionField.type());
-          builder.addField(optionJavaType, optionField.name(), PUBLIC, FINAL);
-          constructorBuilder.addParameter(optionJavaType, optionField.name());
-          constructorBuilder.addStatement("this.$L = $L", optionField.name(), optionField.name());
+          TypeName optionJavaType = typeName(optionField.getType());
+          builder.addField(optionJavaType, optionField.getName(), PUBLIC, FINAL);
+          constructorBuilder.addParameter(optionJavaType, optionField.getName());
+          constructorBuilder.addStatement(
+              "this.$L = $L", optionField.getName(), optionField.getName());
         }
       }
     }
@@ -447,15 +448,15 @@ public final class JavaGenerator {
         .beginControlFlow("switch ($N)", value);
 
     Set<Integer> seenTags = new LinkedHashSet<>();
-    for (EnumConstant constant : type.constants()) {
+    for (EnumConstant constant : type.getConstants()) {
       Object[] enumArgs = new Object[allOptionMembers.size() + 1];
       enumArgs[0] = constant.getTag();
       for (int i = 0; i < allOptionMembers.size(); i++) {
         ProtoMember protoMember = allOptionMembers.get(i);
         Field field = schema.getField(protoMember);
-        Object fieldValue = constant.getOptions().map().get(protoMember);
+        Object fieldValue = constant.getOptions().getMap().get(protoMember);
         enumArgs[i + 1] = fieldValue != null
-            ? fieldInitializer(field.type(), fieldValue)
+            ? fieldInitializer(field.getType(), fieldValue)
             : null;
       }
 
@@ -487,12 +488,12 @@ public final class JavaGenerator {
     if (!emitCompact) {
       adapterBuilder.initializer("new $T()", adapterJavaType);
     } else {
-      adapterBuilder.initializer("$T.newEnumAdapter($T.class)", ProtoAdapterJvm.class, javaType);
+      adapterBuilder.initializer("$T.newEnumAdapter($T.class)", ProtoAdapter.class, javaType);
     }
     builder.addField(adapterBuilder.build());
 
     // Enum type options.
-    FieldSpec options = optionsField(ENUM_OPTIONS, "ENUM_OPTIONS", type.options());
+    FieldSpec options = optionsField(ENUM_OPTIONS, "ENUM_OPTIONS", type.getOptions());
     if (options != null) {
       builder.addField(options);
     }
@@ -520,7 +521,7 @@ public final class JavaGenerator {
 
     NameAllocator nameAllocator = nameAllocators.getUnchecked(type);
 
-    ClassName javaType = (ClassName) typeName(type.type());
+    ClassName javaType = (ClassName) typeName(type.getType());
     ClassName builderJavaType = javaType.nestedClass("Builder");
 
     TypeSpec.Builder builder = TypeSpec.classBuilder(javaType.simpleName());
@@ -530,8 +531,8 @@ public final class JavaGenerator {
       builder.addModifiers(STATIC);
     }
 
-    if (!type.documentation().isEmpty()) {
-      builder.addJavadoc("$L\n", sanitizeJavadoc(type.documentation()));
+    if (!type.getDocumentation().isEmpty()) {
+      builder.addJavadoc("$L\n", sanitizeJavadoc(type.getDocumentation()));
     }
 
     ClassName messageType = emitAndroid ? ANDROID_MESSAGE : MESSAGE;
@@ -558,24 +559,24 @@ public final class JavaGenerator {
         .build());
 
     FieldSpec messageOptions = optionsField(
-        MESSAGE_OPTIONS, nameAllocator.get("MESSAGE_OPTIONS"), type.options());
+        MESSAGE_OPTIONS, nameAllocator.get("MESSAGE_OPTIONS"), type.getOptions());
     if (messageOptions != null) {
       builder.addField(messageOptions);
     }
 
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
       String optionsFieldName = "FIELD_OPTIONS_" + fieldName.toUpperCase(Locale.US);
-      FieldSpec fieldOptions = optionsField(FIELD_OPTIONS, optionsFieldName, field.options());
+      FieldSpec fieldOptions = optionsField(FIELD_OPTIONS, optionsFieldName, field.getOptions());
       if (fieldOptions != null) {
         builder.addField(fieldOptions);
       }
     }
 
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       TypeName fieldJavaType = fieldType(field);
 
-      if ((field.type().isScalar() || isEnum(field.type()))
+      if ((field.getType().isScalar() || isEnum(field.getType()))
           && !field.isRepeated()
           && !field.isPacked()) {
         builder.addField(defaultField(nameAllocator, field, fieldJavaType));
@@ -584,11 +585,11 @@ public final class JavaGenerator {
       String fieldName = nameAllocator.get(field);
       FieldSpec.Builder fieldBuilder = FieldSpec.builder(fieldJavaType, fieldName, PUBLIC, FINAL);
       fieldBuilder.addAnnotation(wireFieldAnnotation(field));
-      if (!field.documentation().isEmpty()) {
-        fieldBuilder.addJavadoc("$L\n", sanitizeJavadoc(field.documentation()));
+      if (!field.getDocumentation().isEmpty()) {
+        fieldBuilder.addJavadoc("$L\n", sanitizeJavadoc(field.getDocumentation()));
       }
       if (field.isExtension()) {
-        fieldBuilder.addJavadoc("Extension source: $L\n", field.location().withPathOnly());
+        fieldBuilder.addJavadoc("Extension source: $L\n", field.getLocation().withPathOnly());
       }
       if (field.isDeprecated()) {
         fieldBuilder.addAnnotation(Deprecated.class);
@@ -614,7 +615,7 @@ public final class JavaGenerator {
 
     builder.addType(builder(nameAllocator, type, javaType, builderJavaType));
 
-    for (Type nestedType : type.nestedTypes()) {
+    for (Type nestedType : type.getNestedTypes()) {
       builder.addType(generateType(nestedType));
     }
 
@@ -635,7 +636,7 @@ public final class JavaGenerator {
   }
 
   private TypeSpec generateEnclosingType(EnclosingType type) {
-    ClassName javaType = (ClassName) typeName(type.type());
+    ClassName javaType = (ClassName) typeName(type.getType());
 
     TypeSpec.Builder builder = TypeSpec.classBuilder(javaType.simpleName())
         .addModifiers(PUBLIC, FINAL);
@@ -643,7 +644,7 @@ public final class JavaGenerator {
       builder.addModifiers(STATIC);
     }
 
-    String documentation = type.documentation();
+    String documentation = type.getDocumentation();
     if (!documentation.isEmpty()) {
       documentation += "\n\n<p>";
     }
@@ -656,7 +657,7 @@ public final class JavaGenerator {
         .addStatement("throw new $T()", AssertionError.class)
         .build());
 
-    for (Type nestedType : type.nestedTypes()) {
+    for (Type nestedType : type.getNestedTypes()) {
       builder.addType(generateType(nestedType));
     }
 
@@ -666,8 +667,8 @@ public final class JavaGenerator {
   /** Returns a standalone adapter for {@code type}. */
   public TypeSpec generateAdapterForCustomType(Type type) {
     NameAllocator nameAllocator = nameAllocators.getUnchecked(type);
-    ClassName adapterTypeName = abstractAdapterName(type.type());
-    ClassName typeName = (ClassName) typeName(type.type());
+    ClassName adapterTypeName = abstractAdapterName(type.getType());
+    ClassName typeName = (ClassName) typeName(type.getType());
 
     TypeSpec.Builder adapter;
     if (type instanceof MessageType) {
@@ -679,10 +680,11 @@ public final class JavaGenerator {
 
     if (adapterTypeName.enclosingClassName() != null) adapter.addModifiers(STATIC);
 
-    for (Type nestedType : type.nestedTypes()) {
-      if (profile.getAdapter(nestedType.type()) == null) {
+    for (Type nestedType : type.getNestedTypes()) {
+      if (profile.getAdapter(nestedType.getType()) == null) {
         throw new IllegalArgumentException("Missing custom proto adapter for "
-            + nestedType.type().enclosingTypeOrPackage() + "." + nestedType.type().simpleName()
+            + nestedType.getType().getEnclosingTypeOrPackage() + "."
+            + nestedType.getType().getSimpleName()
             + " when enclosing proto has custom proto adapter.");
       }
       adapter.addType(generateAdapterForCustomType(nestedType));
@@ -692,12 +694,12 @@ public final class JavaGenerator {
   }
 
   /** Returns the set of names that are not unique within {@code fields}. */
-  private Set<String> collidingFieldNames(ImmutableList<Field> fields) {
+  private Set<String> collidingFieldNames(List<Field> fields) {
     Set<String> fieldNames = new LinkedHashSet<>();
     Set<String> collidingNames = new LinkedHashSet<>();
     for (Field field : fields) {
-      if (!fieldNames.add(field.name())) {
-        collidingNames.add(field.name());
+      if (!fieldNames.add(field.getName())) {
+        collidingNames.add(field.getName());
       }
     }
     return collidingNames;
@@ -708,7 +710,7 @@ public final class JavaGenerator {
     FieldSpec.Builder result = FieldSpec.builder(adapterOf(javaType), adapterName)
         .addModifiers(PUBLIC, STATIC, FINAL);
     if (emitCompact) {
-      result.initializer("$T.newMessageAdapter($T.class)", ProtoAdapterJvm.class, javaType);
+      result.initializer("$T.newMessageAdapter($T.class)", ProtoAdapter.class, javaType);
     } else {
       result.initializer("new $T()", adapterJavaType);
     }
@@ -739,9 +741,9 @@ public final class JavaGenerator {
 
     MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder();
     constructorBuilder.addModifiers(PUBLIC);
-    constructorBuilder.addStatement("super($T.VARINT, $T.getKotlinClass($T.class))",
-        FieldEncoding.class, JvmClassMappingKt.class, javaType);
-    for (EnumConstant constant : type.constants()) {
+    constructorBuilder.addStatement("super($T.VARINT, $T.class)",
+        FieldEncoding.class, javaType);
+    for (EnumConstant constant : type.getConstants()) {
       String name = nameAllocator.get(constant);
       FieldSpec.Builder fieldBuilder = FieldSpec.builder(javaType, name)
           .addModifiers(PROTECTED, FINAL);
@@ -762,7 +764,7 @@ public final class JavaGenerator {
         .addModifiers(PROTECTED)
         .returns(int.class)
         .addParameter(javaType, value);
-    for (EnumConstant constant : type.constants()) {
+    for (EnumConstant constant : type.getConstants()) {
       String name = nameAllocator.get(constant);
       toValueBuilder.addStatement("if ($N.equals($N)) return $L", value, name, constant.getTag());
     }
@@ -774,12 +776,12 @@ public final class JavaGenerator {
         .returns(javaType)
         .addParameter(int.class, value);
     fromValueBuilder.beginControlFlow("switch ($N)", value);
-    for (EnumConstant constant : type.constants()) {
+    for (EnumConstant constant : type.getConstants()) {
       String name = nameAllocator.get(constant);
       fromValueBuilder.addStatement("case $L: return $N", constant.getTag(), name);
     }
-    fromValueBuilder.addStatement("default: throw new $T($N, $T.getKotlinClass($T.class))",
-        EnumConstantNotFoundException.class, value, JvmClassMappingKt.class, javaType);
+    fromValueBuilder.addStatement("default: throw new $T($N, $T.class)",
+        EnumConstantNotFoundException.class, value, javaType);
     fromValueBuilder.endControlFlow();
     builder.addMethod(fromValueBuilder.build());
 
@@ -813,6 +815,14 @@ public final class JavaGenerator {
         .addStatement("return fromValue($N)", value)
         .build());
 
+    builder.addMethod(MethodSpec.methodBuilder("redact")
+        .addAnnotation(Override.class)
+        .addModifiers(PUBLIC)
+        .returns(javaType)
+        .addParameter(javaType, "value")
+        .addStatement("return value")
+        .build());
+
     return builder.build();
   }
 
@@ -821,7 +831,7 @@ public final class JavaGenerator {
         .superclass(enumAdapterOf(javaType))
         .addModifiers(PRIVATE, STATIC, FINAL)
         .addMethod(MethodSpec.constructorBuilder()
-            .addStatement("super($T.getKotlinClass($T.class))", JvmClassMappingKt.class, javaType)
+            .addStatement("super($T.class)", javaType)
             .build())
         .addMethod(MethodSpec.methodBuilder("fromValue")
             .addAnnotation(Override.class)
@@ -847,8 +857,7 @@ public final class JavaGenerator {
 
     adapter.addMethod(MethodSpec.constructorBuilder()
         .addModifiers(PUBLIC)
-        .addStatement("super($T.LENGTH_DELIMITED, $T.getKotlinClass($T.class))",
-            FieldEncoding.class, JvmClassMappingKt.class, javaType)
+        .addStatement("super($T.LENGTH_DELIMITED, $T.class)", FieldEncoding.class, javaType)
         .build());
 
     if (!useBuilder) {
@@ -856,7 +865,7 @@ public final class JavaGenerator {
           .addModifiers(PUBLIC, ABSTRACT)
           .returns(javaType);
 
-      for (Field field : type.fieldsAndOneOfFields()) {
+      for (Field field : type.getFieldsAndOneOfFields()) {
         TypeName fieldType = fieldType(field);
         String fieldName = nameAllocator.get(field);
         fromProto.addParameter(fieldType, fieldName);
@@ -875,13 +884,13 @@ public final class JavaGenerator {
     adapter.addMethod(messageAdapterDecode(nameAllocator, type, javaType, useBuilder, builderType));
     adapter.addMethod(messageAdapterRedact(nameAllocator, type, javaType, useBuilder, builderType));
 
-    for (Field field : type.fieldsAndOneOfFields()) {
-      if (field.type().isMap()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
+      if (field.getType().isMap()) {
         TypeName adapterType = adapterOf(fieldType(field));
-        adapter.addField(FieldSpec.builder(adapterType, field.name(), PRIVATE, FINAL)
+        adapter.addField(FieldSpec.builder(adapterType, field.getName(), PRIVATE, FINAL)
             .initializer("$T.newMapAdapter($L, $L)", ADAPTER,
-                singleAdapterFor(field.type().keyType()),
-                singleAdapterFor(field.type().valueType()))
+                singleAdapterFor(field.getType().getKeyType()),
+                singleAdapterFor(field.getType().getValueType()))
             .build());
       }
     }
@@ -899,8 +908,8 @@ public final class JavaGenerator {
 
     result.addCode("$[");
     String leading = "return";
-    for (Field field : type.fieldsAndOneOfFields()) {
-      int fieldTag = field.tag();
+    for (Field field : type.getFieldsAndOneOfFields()) {
+      int fieldTag = field.getTag();
       String fieldName = nameAllocator.get(field);
       CodeBlock adapter = adapterFor(field);
       result.addCode("$L $L.encodedSizeWithTag($L, ", leading, adapter, fieldTag)
@@ -925,8 +934,8 @@ public final class JavaGenerator {
         .addParameter(javaType, "value")
         .addException(IOException.class);
 
-    for (Field field : type.fieldsAndOneOfFields()) {
-      int fieldTag = field.tag();
+    for (Field field : type.getFieldsAndOneOfFields()) {
+      int fieldTag = field.getTag();
       CodeBlock adapter = adapterFor(field);
       result.addCode("$L.encodeWithTag(writer, $L, ", adapter, fieldTag)
           .addCode((useBuilder ? "value.$L" : "$L(value)"), nameAllocator.get(field))
@@ -949,7 +958,7 @@ public final class JavaGenerator {
         .addParameter(ProtoReader.class, "reader")
         .addException(IOException.class);
 
-    List<Field> fields = TAG_ORDERING.sortedCopy(type.fieldsAndOneOfFields());
+    List<Field> fields = TAG_ORDERING.sortedCopy(type.getFieldsAndOneOfFields());
 
     if (useBuilder) {
       result.addStatement("$1T builder = new $1T()", builderJavaType);
@@ -965,9 +974,9 @@ public final class JavaGenerator {
     result.beginControlFlow("switch (tag)");
 
     for (Field field : fields) {
-      int fieldTag = field.tag();
+      int fieldTag = field.getTag();
 
-      if (isEnum(field.type())) {
+      if (isEnum(field.getType())) {
         result.beginControlFlow("case $L:", fieldTag);
         result.beginControlFlow("try");
         result.addCode(decodeAndAssign(field, nameAllocator, useBuilder));
@@ -991,9 +1000,7 @@ public final class JavaGenerator {
 
     result.beginControlFlow("default:");
     if (useBuilder) {
-      result.addStatement("$T fieldEncoding = reader.peekFieldEncoding()", FieldEncoding.class)
-          .addStatement("$T value = fieldEncoding.rawProtoAdapter().decode(reader)", Object.class)
-          .addStatement("builder.addUnknownField(tag, fieldEncoding, value)");
+      result.addStatement("reader.readUnknownField(tag)");
     } else {
       result.addStatement("reader.skip()");
     }
@@ -1001,14 +1008,18 @@ public final class JavaGenerator {
 
     result.endControlFlow(); // switch
     result.endControlFlow(); // for
-    result.addStatement("reader.endMessage(token)");
+    if (useBuilder) {
+      result.addStatement("builder.addUnknownFields(reader.endMessageAndGetUnknownFields(token))");
+    } else {
+      result.addStatement("reader.endMessageAndGetUnknownFields(token)");
+    }
 
     if (useBuilder) {
       result.addStatement("return builder.build()");
     } else {
       result.addCode("return fromProto(");
       boolean first = true;
-      for (Field field : type.fieldsAndOneOfFields()) {
+      for (Field field : type.getFieldsAndOneOfFields()) {
         if (!first) result.addCode(", ");
         result.addCode("$N", nameAllocator.get(field));
         first = false;
@@ -1026,7 +1037,7 @@ public final class JavaGenerator {
       return useBuilder
           ? CodeBlock.of("builder.$L.add($L)", fieldName, decode)
           : CodeBlock.of("$L.add($L)", fieldName, decode);
-    } else if (field.type().isMap()) {
+    } else if (field.getType().isMap()) {
       return useBuilder
           ? CodeBlock.of("builder.$L.putAll($L)", fieldName, decode)
           : CodeBlock.of("$L.putAll($L)", fieldName, decode);
@@ -1047,7 +1058,7 @@ public final class JavaGenerator {
 
     int redactedFieldCount = 0;
     List<String> requiredRedacted = new ArrayList<>();
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       if (field.isRedacted()) {
         redactedFieldCount++;
         if (field.isRequired()) {
@@ -1071,25 +1082,26 @@ public final class JavaGenerator {
 
     result.addStatement("$1T builder = value.newBuilder()", builderJavaType);
 
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
       if (field.isRedacted()) {
         if (field.isRepeated()) {
           result.addStatement("builder.$N = $T.emptyList()", fieldName, Collections.class);
-        } else if (field.type().isMap()) {
+        } else if (field.getType().isMap()) {
           result.addStatement("builder.$N = $T.emptyMap()", fieldName, Collections.class);
         } else {
           result.addStatement("builder.$N = null", fieldName);
         }
-      } else if (!field.type().isScalar() && !isEnum(field.type())) {
+      } else if (!field.getType().isScalar() && !isEnum(field.getType())) {
         if (field.isRepeated()) {
           CodeBlock adapter = singleAdapterFor(field);
           result.addStatement("$T.redactElements(builder.$N, $L)", Internal.class, fieldName,
               adapter);
-        } else if (field.type().isMap()) {
+        } else if (field.getType().isMap()) {
           // We only need to ask the values to redact themselves if the type is a message.
-          if (!field.type().valueType().isScalar() && !isEnum(field.type().valueType())) {
-            CodeBlock adapter = singleAdapterFor(field.type().valueType());
+          if (!field.getType().getValueType().isScalar()
+              && !isEnum(field.getType().getValueType())) {
+            CodeBlock adapter = singleAdapterFor(field.getType().getValueType());
             result.addStatement("$T.redactElements(builder.$N, $L)", Internal.class, fieldName,
                 adapter);
           }
@@ -1122,14 +1134,14 @@ public final class JavaGenerator {
     initializer.add("$[new $T.Builder()", optionsJavaType);
 
     boolean empty = true;
-    for (Map.Entry<ProtoMember, ?> entry : options.map().entrySet()) {
+    for (Map.Entry<ProtoMember, ?> entry : options.getMap().entrySet()) {
       if (entry.getKey().equals(FIELD_DEPRECATED) || entry.getKey().equals(PACKED)) {
         continue;
       }
 
       Field optionField = schema.getField(entry.getKey());
       initializer.add("\n.$L($L)", fieldName(optionsType, optionField),
-          fieldInitializer(optionField.type(), entry.getValue()));
+          fieldInitializer(optionField.getType(), entry.getValue()));
       empty = false;
     }
     initializer.add("\n.build()$]");
@@ -1148,11 +1160,11 @@ public final class JavaGenerator {
   }
 
   private TypeName fieldType(Field field) {
-    ProtoType type = field.type();
+    ProtoType type = field.getType();
     if (type.isMap()) {
       return ParameterizedTypeName.get(ClassName.get(Map.class),
-          typeName(type.keyType()),
-          typeName(type.valueType()));
+          typeName(type.getKeyType()),
+          typeName(type.getValueType()));
     }
     TypeName messageType = typeName(type);
     return field.isRepeated() ? listOf(messageType) : messageType;
@@ -1179,20 +1191,20 @@ public final class JavaGenerator {
   private AnnotationSpec wireFieldAnnotation(Field field) {
     AnnotationSpec.Builder result = AnnotationSpec.builder(WireField.class);
 
-    int tag = field.tag();
+    int tag = field.getTag();
     result.addMember("tag", String.valueOf(tag));
-    if (field.type().isMap()) {
-      result.addMember("keyAdapter", "$S", adapterString(field.type().keyType()));
-      result.addMember("adapter", "$S", adapterString(field.type().valueType()));
+    if (field.getType().isMap()) {
+      result.addMember("keyAdapter", "$S", adapterString(field.getType().getKeyType()));
+      result.addMember("adapter", "$S", adapterString(field.getType().getValueType()));
     } else {
-      result.addMember("adapter", "$S", adapterString(field.type()));
+      result.addMember("adapter", "$S", adapterString(field.getType()));
     }
 
     if (!field.isOptional()) {
       if (field.isPacked()) {
         result.addMember("label", "$T.PACKED", WireField.Label.class);
-      } else if (field.label() != null) {
-        result.addMember("label", "$T.$L", WireField.Label.class, field.label());
+      } else if (field.getLabel() != null) {
+        result.addMember("label", "$T.$L", WireField.Label.class, field.getLabel());
       }
     }
 
@@ -1232,7 +1244,7 @@ public final class JavaGenerator {
     MethodSpec.Builder result = MethodSpec.constructorBuilder();
     result.addModifiers(PUBLIC);
     result.addCode("this(");
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       TypeName javaType = fieldType(field);
       String fieldName = nameAllocator.get(field);
       ParameterSpec.Builder param = ParameterSpec.builder(javaType, fieldName);
@@ -1277,11 +1289,11 @@ public final class JavaGenerator {
         .addModifiers(PUBLIC)
         .addStatement("super($N, $N)", adapterName, unknownFieldsName);
 
-    for (OneOf oneOf : type.oneOfs()) {
-      if (oneOf.fields().size() < 2) continue;
+    for (OneOf oneOf : type.getOneOfs()) {
+      if (oneOf.getFields().size() < 2) continue;
       CodeBlock.Builder fieldNamesBuilder = CodeBlock.builder();
       boolean first = true;
-      for (Field field : oneOf.fields()) {
+      for (Field field : oneOf.getFields()) {
         if (!first) fieldNamesBuilder.add(", ");
         if (constructorTakesAllFields) {
           fieldNamesBuilder.add("$N", localNameAllocator.get(field));
@@ -1296,7 +1308,7 @@ public final class JavaGenerator {
           "at most one of " + fieldNames + " may be non-null");
       result.endControlFlow();
     }
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       TypeName javaType = fieldType(field);
       String fieldName = localNameAllocator.get(field);
       String fieldAccessName = constructorTakesAllFields
@@ -1311,7 +1323,7 @@ public final class JavaGenerator {
         result.addParameter(param.build());
       }
 
-      if (field.isRepeated() || field.type().isMap()) {
+      if (field.isRepeated() || field.getType().isMap()) {
         result.addStatement("this.$1L = $2T.immutableCopyOf($1S, $3L)", fieldName,
             Internal.class, fieldAccessName);
       } else {
@@ -1343,27 +1355,23 @@ public final class JavaGenerator {
     String otherName = localNameAllocator.newName("other");
     String oName = localNameAllocator.newName("o");
 
-    TypeName javaType = typeName(type.type());
+    TypeName javaType = typeName(type.getType());
     MethodSpec.Builder result = MethodSpec.methodBuilder("equals")
         .addAnnotation(Override.class)
         .addModifiers(PUBLIC)
         .returns(boolean.class)
         .addParameter(Object.class, otherName);
 
-    List<Field> fields = type.fieldsAndOneOfFields();
-    if (fields.isEmpty()) {
-      result.addStatement("return $N instanceof $T", otherName, javaType);
-      return result.build();
-    }
-
     result.addStatement("if ($N == this) return true", otherName);
     result.addStatement("if (!($N instanceof $T)) return false", otherName, javaType);
 
     result.addStatement("$T $N = ($T) $N", javaType, oName, javaType, otherName);
     result.addCode("$[return unknownFields().equals($N.unknownFields())", oName);
+
+    List<Field> fields = type.getFieldsAndOneOfFields();
     for (Field field : fields) {
       String fieldName = localNameAllocator.get(field);
-      if (field.isRequired() || field.isRepeated() || field.type().isMap()) {
+      if (field.isRequired() || field.isRepeated() || field.getType().isMap()) {
         result.addCode("\n&& $1L.equals($2N.$1L)", fieldName, oName);
       } else {
         result.addCode("\n&& $1T.equals($2L, $3N.$2L)", Internal.class, fieldName, oName);
@@ -1399,7 +1407,7 @@ public final class JavaGenerator {
         .addModifiers(PUBLIC)
         .returns(int.class);
 
-    List<Field> fields = type.fieldsAndOneOfFields();
+    List<Field> fields = type.getFieldsAndOneOfFields();
     if (fields.isEmpty()) {
       result.addStatement("return unknownFields().hashCode()");
       return result.build();
@@ -1411,7 +1419,7 @@ public final class JavaGenerator {
     for (Field field : fields) {
       String fieldName = localNameAllocator.get(field);
       result.addCode("$1N = $1N * 37 + ", resultName);
-      if (field.isRepeated() || field.isRequired() || field.type().isMap()) {
+      if (field.isRepeated() || field.isRequired() || field.getType().isMap()) {
         result.addStatement("$L.hashCode()", fieldName);
       } else {
         result.addStatement("($1L != null ? $1L.hashCode() : 0)", fieldName);
@@ -1434,23 +1442,23 @@ public final class JavaGenerator {
     String builderName = localNameAllocator.newName("builder");
     result.addStatement("$1T $2N = new $1T()", StringBuilder.class, builderName);
 
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
-      if (field.isRepeated() || field.type().isMap()) {
+      if (field.isRepeated() || field.getType().isMap()) {
         result.addCode("if (!$N.isEmpty()) ", fieldName);
       } else if (!field.isRequired()) {
         result.addCode("if ($N != null) ", fieldName);
       }
       if (field.isRedacted()) {
-        result.addStatement("$N.append(\", $N=██\")", builderName, field.name());
+        result.addStatement("$N.append(\", $N=██\")", builderName, field.getName());
       } else {
-        result.addStatement("$N.append(\", $N=\").append($L)", builderName, field.name(),
+        result.addStatement("$N.append(\", $N=\").append($L)", builderName, field.getName(),
             fieldName);
       }
     }
 
     result.addStatement("return builder.replace(0, 2, \"$L{\").append('}').toString()",
-        type.type().simpleName());
+        type.getType().getSimpleName());
 
     return result.build();
   }
@@ -1462,7 +1470,7 @@ public final class JavaGenerator {
 
     result.superclass(builderOf(javaType, builderType));
 
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
       result.addField(fieldType(field), fieldName, PUBLIC);
     }
@@ -1473,8 +1481,8 @@ public final class JavaGenerator {
       result.addMethod(setter(nameAllocator, builderType, null, field));
     }
 
-    for (OneOf oneOf : type.oneOfs()) {
-      for (Field field : oneOf.fields()) {
+    for (OneOf oneOf : type.getOneOfs()) {
+      for (Field field : oneOf.getFields()) {
         result.addMethod(setter(nameAllocator, builderType, oneOf, field));
       }
     }
@@ -1491,7 +1499,7 @@ public final class JavaGenerator {
   //
   private MethodSpec builderNoArgsConstructor(NameAllocator nameAllocator, MessageType type) {
     MethodSpec.Builder result = MethodSpec.constructorBuilder().addModifiers(PUBLIC);
-    for (Field field : type.fieldsAndOneOfFields()) {
+    for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
       CodeBlock initialValue = initialValue(field);
       if (initialValue != null) {
@@ -1505,7 +1513,7 @@ public final class JavaGenerator {
   private @Nullable CodeBlock initialValue(Field field) {
     if (field.isPacked() || field.isRepeated()) {
       return CodeBlock.of("$T.newMutableList()", Internal.class);
-    } else if (field.type().isMap()) {
+    } else if (field.getType().isMap()) {
       return CodeBlock.of("$T.newMutableMap()", Internal.class);
     } else {
       return null;
@@ -1526,7 +1534,7 @@ public final class JavaGenerator {
     NameAllocator localNameAllocator = nameAllocator.clone();
 
     String builderName = localNameAllocator.newName("builder");
-    ClassName javaType = (ClassName) typeName(message.type());
+    ClassName javaType = (ClassName) typeName(message.getType());
     ClassName builderJavaType = javaType.nestedClass("Builder");
 
     MethodSpec.Builder result = MethodSpec.methodBuilder("newBuilder")
@@ -1535,12 +1543,11 @@ public final class JavaGenerator {
         .returns(builderJavaType)
         .addStatement("$1T $2L = new $1T()", builderJavaType, builderName);
 
-    List<Field> fields = message.fieldsAndOneOfFields();
+    List<Field> fields = message.getFieldsAndOneOfFields();
     for (Field field : fields) {
       String fieldName = localNameAllocator.get(field);
-      if (field.isRepeated() || field.type().isMap()) {
-        result.addStatement("$1L.$2L = $3T.copyOf($2S, $2L)", builderName, fieldName,
-            Internal.class);
+      if (field.isRepeated() || field.getType().isMap()) {
+        result.addStatement("$1L.$2L = $3T.copyOf($2L)", builderName, fieldName, Internal.class);
       } else {
         result.addStatement("$1L.$2L = $2L", builderName, fieldName);
       }
@@ -1561,21 +1568,21 @@ public final class JavaGenerator {
         .addParameter(javaType, fieldName)
         .returns(builderType);
 
-    if (!field.documentation().isEmpty()) {
-      result.addJavadoc("$L\n", sanitizeJavadoc(field.documentation()));
+    if (!field.getDocumentation().isEmpty()) {
+      result.addJavadoc("$L\n", sanitizeJavadoc(field.getDocumentation()));
     }
 
     if (field.isDeprecated()) {
       result.addAnnotation(Deprecated.class);
     }
 
-    if (field.isRepeated() || field.type().isMap()) {
+    if (field.isRepeated() || field.getType().isMap()) {
       result.addStatement("$T.checkElementsNotNull($L)", Internal.class, fieldName);
     }
     result.addStatement("this.$L = $L", fieldName, fieldName);
 
     if (oneOf != null) {
-      for (Field other : oneOf.fields()) {
+      for (Field other : oneOf.getFields()) {
         if (field != other) {
           result.addStatement("this.$L = null", nameAllocator.get(other));
         }
@@ -1617,7 +1624,7 @@ public final class JavaGenerator {
         conditionals.add("$L == null", nameAllocator.get(requiredField));
         if (i > 0) missingArgs.add(",\n");
         missingArgs.add("$1L, $2S", nameAllocator.get(requiredField),
-            requiredField.name());
+            requiredField.getName());
       }
 
       result.beginControlFlow("if ($L)", conditionals.add("$]").build())
@@ -1630,7 +1637,7 @@ public final class JavaGenerator {
 
     result.addCode("return new $T(", javaType);
     if (constructorTakesAllFields) {
-      for (Field field : message.fieldsAndOneOfFields()) {
+      for (Field field : message.getFieldsAndOneOfFields()) {
         result.addCode("$L, ", nameAllocator.get(field));
       }
     } else {
@@ -1644,12 +1651,12 @@ public final class JavaGenerator {
   private CodeBlock defaultValue(Field field) {
     Object defaultValue = field.getDefault();
 
-    if (defaultValue == null && isEnum(field.type())) {
-      defaultValue = enumDefault(field.type()).getName();
+    if (defaultValue == null && isEnum(field.getType())) {
+      defaultValue = enumDefault(field.getType()).getName();
     }
 
-    if (field.type().isScalar() || defaultValue != null) {
-      return fieldInitializer(field.type(), defaultValue);
+    if (field.getType().isScalar() || defaultValue != null) {
+      return fieldInitializer(field.getType(), defaultValue);
     }
 
     throw new IllegalStateException("Field " + field + " cannot have default value");
@@ -1676,7 +1683,7 @@ public final class JavaGenerator {
       for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
         ProtoMember protoMember = (ProtoMember) entry.getKey();
         Field field = schema.getField(protoMember);
-        CodeBlock valueInitializer = fieldInitializer(field.type(), entry.getValue());
+        CodeBlock valueInitializer = fieldInitializer(field.getType(), entry.getValue());
         builder.add("\n$>$>.$L($L)$<$<", fieldName(type, field), valueInitializer);
       }
       builder.add("\n$>$>.build()$<$<");

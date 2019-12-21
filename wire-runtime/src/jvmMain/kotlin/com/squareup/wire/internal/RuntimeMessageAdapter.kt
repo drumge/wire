@@ -43,7 +43,7 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       val binding = fieldBinding[value] ?: continue
       size += fieldBinding.adapter().encodedSizeWithTag(fieldBinding.tag, binding)
     }
-    size += value.unknownFields().size
+    size += value.unknownFields.size
 
     value.cachedSerializedSize = size
     return size
@@ -55,7 +55,7 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       val binding = fieldBinding[value] ?: continue
       fieldBinding.adapter().encodeWithTag(writer, fieldBinding.tag, binding)
     }
-    writer.writeBytes(value.unknownFields())
+    writer.writeBytes(value.unknownFields)
   }
 
   override fun redact(value: M): M {
@@ -132,18 +132,10 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       } catch (e: EnumConstantNotFoundException) {
         // An unknown Enum value was encountered, store it as an unknown field.
         builder.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
-      } catch (e: TypeCastException) {
-        e.printStackTrace()
       }
 
     }
-    reader.endMessage(token)
-    for (fieldBinding in fieldBindings.values) {
-      val binding = fieldBinding.getFromBuilder(builder)
-      if (binding == null) {
-        fieldBinding.defaultValue(builder)
-      }
-    }
+    reader.endMessageAndGetUnknownFields(token) // Ignore return value
 
     return builder.build()
   }

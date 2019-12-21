@@ -34,7 +34,8 @@ import java.nio.file.FileSystems
  *     and not in [treeShakingRubbish].
  *
  *  4. Call each target. It will generate sources for protos in the [sourcePath] that are in its
- *     [Target.elements] and that haven't already been emitted by an earlier target.
+ *     [Target.includes], that are not in its [Target.excludes], and that haven't already been
+ *     emitted by an earlier target.
  *
  *
  * Source Directories and Archives
@@ -61,8 +62,9 @@ import java.nio.file.FileSystems
  * Matching Packages, Types, and Members
  * -------------------------------------
  *
- * The [treeShakingRoots], [treeShakingRubbish], and [Target.elements] lists contain strings that
- * select proto types and members. Strings in these lists are in one of these forms:
+ * The [treeShakingRoots], [treeShakingRubbish], [Target.includes] and [Target.excludes] lists
+ * contain strings that select proto types and members. Strings in these lists are in one of these
+ * forms:
  *
  *  * Package names followed by `.*`, like `squareup.dinosaurs.*`. This matches types defined in the
  *    package and its descendant packages. A lone asterisk `*` matches all packages.
@@ -135,83 +137,126 @@ data class WireRun(
   val treeShakingRubbish: List<String> = listOf(),
 
   /**
+   * The exclusive lower bound of the version range. Fields with `until` values greater than this
+   * are retained.
+   */
+  val oldest: String? = null,
+
+  /**
+   * The inclusive upper bound of the version range. Fields with `since` values less than or equal
+   * to this are retained.
+   */
+  val newest: String? = null,
+
+  /**
    * Action to take with the loaded, resolved, and possibly-pruned schema.
    */
   val targets: List<Target>
 ) {
 
   fun execute(fs: FileSystem = FileSystems.getDefault(), logger: WireLogger = ConsoleWireLogger()) {
-    // 1. Read source `.proto` files.
-    val schemaLoader = NewSchemaLoader(fs, sourcePath, protoPath)
-    val protoFiles = schemaLoader.load()
+    return NewSchemaLoader(fs).use { newSchemaLoader ->
+      execute(fs, logger, newSchemaLoader)
+    }
+  }
 
-    // 2. Load descriptor proto
-    val protoFilesPlusDescriptor = protoFiles.plus(schemaLoader.loadDescriptorProto())
+  private fun execute(fs: FileSystem, logger: WireLogger, schemaLoader: NewSchemaLoader) {
+    schemaLoader.initRoots(sourcePath, protoPath)
 
-    // 3. Validate the schema and resolve references
-    val fullSchema = Linker(protoFilesPlusDescriptor).link()
+    // Validate the schema and resolve references
+    val fullSchema = schemaLoader.loadSchema()
+    val sourceLocationPaths = schemaLoader.sourcePathFiles.map { it.location.path }
 
-    // 4. Optionally prune the schema.
+    // Optionally prune the schema.
     val schema = treeShake(fullSchema, logger)
 
-    // 5. Call each target.
+    // Call each target.
     val typesToHandle = mutableListOf<Type>()
     val servicesToHandle = mutableListOf<Service>()
-    for (protoFile in schema.protoFiles()) {
-      if (schemaLoader.sourceLocationPaths.contains(protoFile.location().path)) {
-        typesToHandle += protoFile.types()
-        servicesToHandle += protoFile.services()
+    val skippedForSyntax = mutableListOf<ProtoFile>()
+    for (protoFile in schema.protoFiles) {
+      if (protoFile.syntax != ProtoFile.Syntax.PROTO_2) {
+        skippedForSyntax += protoFile
+        continue
+      }
+      if (sourceLocationPaths.contains(protoFile.location.path)) {
+        typesToHandle += protoFile.types
+        servicesToHandle += protoFile.services
       }
     }
-    for (target in targets) {
-      val schemaHandler = target.newHandler(schema, fs, logger)
+    val targetsExclusiveLast = targets.sortedBy { it.exclusive }
+    for (target in targetsExclusiveLast) {
+      val schemaHandler = target.newHandler(schema, fs, logger, schemaLoader)
 
-      val identifierSet = IdentifierSet.Builder()
-          .include(target.elements)
+      val pruningRules: PruningRules = PruningRules.Builder()
+          .include(target.includes)
+          .exclude(target.excludes)
           .build()
 
       val i = typesToHandle.iterator()
       while (i.hasNext()) {
         val type = i.next()
-        if (identifierSet.includes(type.type())) {
+        if (pruningRules.includes(type.type!!)) {
           schemaHandler.handle(type)
           // We don't let other targets handle this one.
-          i.remove()
+          if (target.exclusive) i.remove()
         }
       }
 
       val j = servicesToHandle.iterator()
       while (j.hasNext()) {
         val service = j.next()
-        if (identifierSet.includes(service.type())) {
+        if (pruningRules.includes(service.type())) {
           schemaHandler.handle(service)
           // We don't let other targets handle this one.
-          j.remove()
+          if (target.exclusive) j.remove()
         }
       }
 
-      for (rule in identifierSet.unusedIncludes()) {
-        logger.info("Unused element in target elements: $rule")
+      if (pruningRules.unusedIncludes().isNotEmpty()) {
+        logger.info("""Unused includes in targets:
+            |  ${pruningRules.unusedExcludes().joinToString(separator = "\n  ")}
+            """.trimMargin())
       }
+
+      if (pruningRules.unusedExcludes().isNotEmpty()) {
+        logger.info("""Unused exclude in targets:
+            |  ${pruningRules.unusedExcludes().joinToString(separator = "\n  ")}
+            """.trimMargin())
+      }
+    }
+
+    if (skippedForSyntax.isNotEmpty()) {
+      logger.info("""Skipped .proto files with unsupported syntax. Add this line to fix:
+          |  syntax = "proto2";
+          |  ${skippedForSyntax.joinToString(separator = "\n  ") { it.location.toString() }}
+          """.trimMargin())
     }
   }
 
   /** Returns a subset of schema with unreachable and unwanted elements removed. */
   private fun treeShake(schema: Schema, logger: WireLogger): Schema {
-    if (treeShakingRoots == listOf("*") && treeShakingRubbish.isEmpty()) return schema
+    if (treeShakingRoots == listOf("*") &&
+        treeShakingRubbish.isEmpty() &&
+        oldest == null &&
+        newest == null) {
+      return schema
+    }
 
-    val identifierSet = IdentifierSet.Builder()
+    val pruningRules = PruningRules.Builder()
         .include(treeShakingRoots)
         .exclude(treeShakingRubbish)
+        .oldest(oldest)
+        .newest(newest)
         .build()
 
-    val result = schema.prune(identifierSet)
+    val result = schema.prune(pruningRules)
 
-    for (rule in identifierSet.unusedIncludes()) {
+    for (rule in pruningRules.unusedIncludes()) {
       logger.info("Unused element in treeShakingRoots: $rule")
     }
 
-    for (rule in identifierSet.unusedExcludes()) {
+    for (rule in pruningRules.unusedExcludes()) {
       logger.info("Unused element in treeShakingRubbish: $rule")
     }
 

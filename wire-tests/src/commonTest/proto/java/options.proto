@@ -1,0 +1,40 @@
+/*
+ * Copyright 2019 Square Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+syntax = "proto2";
+package squareup.options.misc;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+  optional bool relevant = 22301;
+  optional bool unused = 22302;
+}
+
+extend google.protobuf.MessageOptions {
+  optional bool message_export_enabled = 22213;
+}
+
+extend google.protobuf.EnumValueOptions {
+  optional int32 text_alignment = 54000;
+}
+
+extend google.protobuf.ServiceOptions {
+  optional bool httpOneOnly = 56000;
+}
+
+extend google.protobuf.MethodOptions {
+  optional bool hide = 56001;
+}

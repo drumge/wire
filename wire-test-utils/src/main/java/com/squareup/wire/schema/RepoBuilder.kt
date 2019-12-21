@@ -21,9 +21,9 @@ import com.squareup.javapoet.JavaFile
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.java.JavaGenerator
-import com.squareup.wire.java.Profile
-import com.squareup.wire.java.ProfileLoader
 import com.squareup.wire.kotlin.KotlinGenerator
+import com.squareup.wire.kotlin.RpcCallStyle
+import com.squareup.wire.kotlin.RpcRole
 import okio.buffer
 import okio.source
 import java.io.File
@@ -38,13 +38,12 @@ import java.nio.file.Files
 class RepoBuilder {
   private val fs = Jimfs.newFileSystem(Configuration.unix())
   private val root = fs.getPath("/source")
-  private val schemaLoader = SchemaLoader().addSource(root)
+  private val schemaLoader = NewSchemaLoader(fs)
+  private var schema: Schema? = null
 
   fun add(name: String, protoFile: String): RepoBuilder {
-    if (name.endsWith(".proto")) {
-      schemaLoader.addProto(name)
-    } else if (!name.endsWith(".wire")) {
-      throw IllegalArgumentException("unexpected file extension: $name")
+    require(name.endsWith(".proto") || name.endsWith(".wire")) {
+      "unexpected file extension: $name"
     }
 
     val relativePath = fs.getPath(name)
@@ -64,28 +63,26 @@ class RepoBuilder {
 
   @Throws(IOException::class)
   fun add(path: String): RepoBuilder {
-    val file = File("../wire-tests/src/test/proto/$path")
+    val file = File("../wire-tests/src/commonTest/proto/java/$path")
     file.source().use { source ->
       val protoFile = source.buffer().readUtf8()
       return add(path, protoFile)
     }
   }
 
+  @Throws(IOException::class)
   fun schema(): Schema {
-    try {
-      return schemaLoader.load()
-    } catch (e: IOException) {
-      throw RuntimeException(e)
+    var result = schema
+    if (result == null) {
+      schemaLoader.initRoots(sourcePath = listOf(Location.get("/source")))
+      result = schemaLoader.loadSchema()
+      schema = result
     }
-
+    return result
   }
 
   @Throws(IOException::class)
-  fun profile(name: String): Profile {
-    return ProfileLoader(fs, name)
-        .schema(schema())
-        .load()
-  }
+  fun profile(name: String) = schemaLoader.loadProfile(name, schema())
 
   @Throws(IOException::class)
   fun protoAdapter(messageTypeName: String): ProtoAdapter<Any> {
@@ -101,16 +98,19 @@ class RepoBuilder {
     }
     val type = schema.getType(typeName)
     val typeSpec = javaGenerator.generateType(type)
-    val typeName1 = javaGenerator.generatedTypeName(type)
-    return JavaFile.builder(typeName1.packageName(), typeSpec).build().toString()
+    val packageName = javaGenerator.generatedTypeName(type).packageName()
+    val javaFile = JavaFile.builder(packageName, typeSpec)
+        .build()
+    return javaFile.toString()
   }
 
   fun generateKotlin(typeName: String): String {
     val schema = schema()
-    val kotlinGenerator =
-        KotlinGenerator(schema, emitAndroid = false, javaInterop = false, blockingServices = false)
-    val typeSpec = kotlinGenerator.generateType(schema.getType(typeName))
-    val fileSpec = FileSpec.builder("", "_")
+    val kotlinGenerator = KotlinGenerator(schema)
+    val type = schema.getType(typeName)
+    val typeSpec = kotlinGenerator.generateType(type)
+    val packageName = kotlinGenerator.generatedTypeName(type).packageName
+    val fileSpec = FileSpec.builder(packageName, "_")
         .addType(typeSpec)
         .addImport("com.squareup.wire.kotlin", "decodeMessage")
         .build()
@@ -120,16 +120,22 @@ class RepoBuilder {
   fun generateGrpcKotlin(
     serviceName: String,
     rpcName: String? = null,
-    blockingServices: Boolean = false
+    rpcCallStyle: RpcCallStyle = RpcCallStyle.SUSPENDING,
+    rpcRole: RpcRole = RpcRole.CLIENT
   ): String {
     val schema = schema()
-    val grpcGenerator = KotlinGenerator(schema, emitAndroid = false, javaInterop = false,
-        blockingServices = blockingServices)
+    val grpcGenerator = KotlinGenerator(
+        schema = schema,
+        emitAndroid = false,
+        javaInterop = false,
+        rpcCallStyle = rpcCallStyle,
+        rpcRole = rpcRole
+    )
     val service = schema.getService(serviceName)
     val rpc = rpcName?.let { service.rpc(rpcName)!! }
     val typeSpec = grpcGenerator.generateService(service, rpc)
-    val packageName = service.type().enclosingTypeOrPackage()
-    val fileSpec = FileSpec.builder(packageName ?: "", "_")
+    val packageName = grpcGenerator.generatedServiceName(service).packageName
+    val fileSpec = FileSpec.builder(packageName, "_")
         .addType(typeSpec)
         .build()
     return fileSpec.toString()

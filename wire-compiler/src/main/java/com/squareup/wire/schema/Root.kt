@@ -16,12 +16,15 @@
 package com.squareup.wire.schema
 
 import com.google.common.io.Closer
+import com.squareup.wire.java.internal.ProfileFileElement
+import com.squareup.wire.java.internal.ProfileParser
 import com.squareup.wire.schema.internal.parser.ProtoParser
 import okio.buffer
 import okio.source
 import java.io.IOException
 import java.nio.file.FileSystem
 import java.nio.file.FileSystems
+import java.nio.file.FileVisitOption
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,6 +33,8 @@ import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 
 internal sealed class Root {
+  abstract val base: String?
+
   /** Returns all proto files within this root. */
   abstract fun allProtoFiles(): Set<ProtoFilePath>
 
@@ -59,7 +64,9 @@ internal fun Location.roots(
     throw IllegalArgumentException("unable to resolve $this")
   } else {
     val path = fs.getPath(path)
-    return path.roots(closer, this)
+    return baseToRoots.computeIfAbsent(this.path) {
+      path.roots(closer, this)
+    }
   }
 }
 
@@ -92,10 +99,12 @@ private fun Path.roots(closer: Closer, location: Location): List<Root> {
  * A logical location (the base location and path to the file), plus the physical path to load.
  * These will be different if the file is loaded from a .zip archive.
  */
-internal class ProtoFilePath(val location: Location, val path: Path) : Root() {
-  init {
-    check(path.endsWithDotProto()) { "expected a .proto suffix for $location" }
-  }
+internal class ProtoFilePath(
+  val location: Location,
+  val path: Path
+) : Root() {
+  override val base: String?
+    get() = null
 
   override fun allProtoFiles() = setOf(this)
 
@@ -121,26 +130,41 @@ internal class ProtoFilePath(val location: Location, val path: Path) : Root() {
       throw IOException("Failed to load $path", e)
     }
   }
+
+  fun parseProfile(): ProfileFileElement {
+    try {
+      path.source().buffer().use { source ->
+        val data = source.readUtf8()
+        val element = ProfileParser(location, data).read()
+        return element
+      }
+    } catch (e: IOException) {
+      throw IOException("Failed to load $path", e)
+    }
+  }
+
+  override fun toString(): String = location.toString()
 }
 
 internal class DirectoryRoot(
   /** The location of either a directory or .zip file. */
-  val base: String,
+  override val base: String,
 
   /** The root to search. If this is a .zip file this is within its internal file system. */
   val rootDirectory: Path
 ) : Root() {
   override fun allProtoFiles(): Set<ProtoFilePath> {
     val result = mutableSetOf<ProtoFilePath>()
-    Files.walkFileTree(rootDirectory, object : SimpleFileVisitor<Path>() {
-      override fun visitFile(descendant: Path, attrs: BasicFileAttributes): FileVisitResult {
-        if (descendant.endsWithDotProto()) {
-          val location = Location.get(base, "${rootDirectory.relativize(descendant)}")
-          result.add(ProtoFilePath(location, descendant))
-        }
-        return FileVisitResult.CONTINUE
-      }
-    })
+    Files.walkFileTree(rootDirectory, setOf(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
+        object : SimpleFileVisitor<Path>() {
+          override fun visitFile(descendant: Path, attrs: BasicFileAttributes): FileVisitResult {
+            if (descendant.endsWithDotProto()) {
+              val location = Location.get(base, "${rootDirectory.relativize(descendant)}")
+              result.add(ProtoFilePath(location, descendant))
+            }
+            return FileVisitResult.CONTINUE
+          }
+        })
     return result
   }
 
@@ -149,6 +173,8 @@ internal class DirectoryRoot(
     if (!Files.exists(resolved)) return null
     return ProtoFilePath(Location.get(base, import), resolved)
   }
+
+  override fun toString(): String = base
 }
 
 private fun Path.endsWithDotProto() = fileName.toString().endsWith(".proto")

@@ -15,7 +15,6 @@
  */
 package com.squareup.wire.schema.internal.parser
 
-import com.google.common.collect.Range
 import com.squareup.wire.schema.Field.Label.OPTIONAL
 import com.squareup.wire.schema.Field.Label.REPEATED
 import com.squareup.wire.schema.Field.Label.REQUIRED
@@ -391,9 +390,9 @@ class MessageElementTest {
         location = location,
         name = "Message",
         reserveds = listOf(
-            ReservedElement(location = location, values = listOf(10, Range.closed(12, 14), "foo")),
+            ReservedElement(location = location, values = listOf(10, 12..14, "foo")),
             ReservedElement(location = location, values = listOf(10)),
-            ReservedElement(location = location, values = listOf(Range.closed(12, 14))),
+            ReservedElement(location = location, values = listOf(12..14)),
             ReservedElement(location = location, values = listOf("foo"))
         )
     )
@@ -549,6 +548,48 @@ class MessageElementTest {
   }
 
   @Test
+  fun fieldWithDefaultStringToSchema() {
+    val field = FieldElement(
+        location = location,
+        label = REQUIRED,
+        type = "string",
+        name = "name",
+        tag = 1,
+        defaultValue = "benoît"
+    )
+    val expected = "required string name = 1 [default = \"benoît\"];\n"
+    assertThat(field.toSchema()).isEqualTo(expected)
+  }
+
+  @Test
+  fun fieldWithDefaultNumberToSchema() {
+    val field = FieldElement(
+        location = location,
+        label = REQUIRED,
+        type = "int32",
+        name = "age",
+        tag = 1,
+        defaultValue = "34"
+    )
+    val expected = "required int32 age = 1 [default = 34];\n"
+    assertThat(field.toSchema()).isEqualTo(expected)
+  }
+
+  @Test
+  fun fieldWithDefaultBoolToSchema() {
+    val field = FieldElement(
+        location = location,
+        label = REQUIRED,
+        type = "bool",
+        name = "human",
+        tag = 1,
+        defaultValue = "true"
+    )
+    val expected = "required bool human = 1 [default = true];\n"
+    assertThat(field.toSchema()).isEqualTo(expected)
+  }
+
+  @Test
   fun oneOfFieldToSchema() {
     val field = FieldElement(
         location = location,
@@ -578,7 +619,7 @@ class MessageElementTest {
   }
 
   @Test
-  fun fieldWithOptionsToSchema() {
+  fun fieldWithOneOptionToSchema() {
     val field = FieldElement(
         location = location,
         label = REQUIRED,
@@ -588,8 +629,26 @@ class MessageElementTest {
         options = listOf(OptionElement.create("kit", Kind.STRING, "kat"))
     )
     val expected =
+        """required string name = 1 [kit = "kat"];
+        |""".trimMargin()
+    assertThat(field.toSchema()).isEqualTo(expected)
+  }
+
+  @Test
+  fun fieldWithMoreThanOneOptionToSchema() {
+    val field = FieldElement(
+        location = location,
+        label = REQUIRED,
+        type = "string",
+        name = "name",
+        tag = 1,
+        options = listOf(OptionElement.create("kit", Kind.STRING, "kat"),
+            OptionElement.create("dup", Kind.STRING, "lo"))
+    )
+    val expected =
         """required string name = 1 [
-        |  kit = "kat"
+        |  kit = "kat",
+        |  dup = "lo"
         |];
         |""".trimMargin()
     assertThat(field.toSchema()).isEqualTo(expected)

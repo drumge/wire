@@ -179,8 +179,12 @@ class WireCompilerTest {
     compileToJava(sources)
 
     val outputs = arrayOf(
+        "com/squareup/wire/protos/unknownfields/EnumVersionOne.java",
+        "com/squareup/wire/protos/unknownfields/EnumVersionTwo.java",
         "com/squareup/wire/protos/unknownfields/VersionOne.java",
-        "com/squareup/wire/protos/unknownfields/VersionTwo.java")
+        "com/squareup/wire/protos/unknownfields/VersionTwo.java",
+        "com/squareup/wire/protos/unknownfields/NestedVersionOne.java",
+        "com/squareup/wire/protos/unknownfields/NestedVersionTwo.java")
     assertJavaOutputs(outputs)
   }
 
@@ -346,9 +350,9 @@ class WireCompilerTest {
     compileToKotlin(sources, "--includes=squareup.protos.kotlin.SomeService")
 
     val outputs = arrayOf(
-        "com/squareup/wire/protos/kotlin/SomeService.kt",
-        "com/squareup/wire/protos/kotlin/SomeResponse.kt",
-        "com/squareup/wire/protos/kotlin/SomeRequest.kt"
+        "com/squareup/wire/protos/kotlin/services/SomeServiceClient.kt",
+        "com/squareup/wire/protos/kotlin/services/SomeResponse.kt",
+        "com/squareup/wire/protos/kotlin/services/SomeRequest.kt"
     )
     assertKotlinOutputs(outputs)
   }
@@ -359,9 +363,9 @@ class WireCompilerTest {
     compileToKotlin(sources, "--includes=NoPackageService")
 
     val outputs = arrayOf(
-        "com/squareup/wire/protos/kotlin/NoPackageService.kt",
-        "com/squareup/wire/protos/kotlin/NoPackageResponse.kt",
-        "com/squareup/wire/protos/kotlin/NoPackageRequest.kt"
+        "com/squareup/wire/protos/kotlin/services/NoPackageServiceClient.kt",
+        "com/squareup/wire/protos/kotlin/services/NoPackageResponse.kt",
+        "com/squareup/wire/protos/kotlin/services/NoPackageRequest.kt"
     )
     assertKotlinOutputs(outputs)
   }
@@ -372,6 +376,24 @@ class WireCompilerTest {
     compileToJava(sources)
 
     assertThat(paths).isNotEmpty()
+  }
+
+  @Test
+  fun testAllTypesKotlin() {
+    val sources = arrayOf("all_types.proto")
+    compileToKotlin(sources)
+
+    val outputs = arrayOf("com/squareup/wire/protos/kotlin/alltypes/AllTypes.kt")
+    assertKotlinOutputs(outputs)
+  }
+
+  @Test
+  fun testAllTypesJavaInteropKotlin() {
+    val sources = arrayOf("all_types.proto")
+    compileToKotlin(sources, "--java_interop")
+
+    val outputs = arrayOf("com/squareup/wire/protos/kotlin/alltypes/AllTypes.kt")
+    assertKotlinOutputs(outputs, ".java.interop")
   }
 
   @Test
@@ -447,6 +469,17 @@ class WireCompilerTest {
   }
 
   @Test
+  fun testCustomOptionsKotlin() {
+    val sources = arrayOf("custom_options.proto", "option_redacted.proto")
+    compileToKotlin(sources, "--named_files_only")
+
+    val outputs = arrayOf(
+            "com/squareup/wire/protos/custom_options/FooBar.kt",
+            "com/squareup/wire/protos/custom_options/MessageWithOptions.kt")
+    assertKotlinOutputs(outputs)
+  }
+
+  @Test
   fun testRedactedKotlin() {
     val sources = arrayOf("redacted_test.proto", "option_redacted.proto")
     compileToKotlin(sources)
@@ -497,6 +530,24 @@ class WireCompilerTest {
     compileToKotlin(sources)
 
     val outputs = arrayOf("com/squareup/wire/protos/kotlin/Form.kt")
+    assertKotlinOutputs(outputs)
+  }
+
+  @Test
+  fun testNoFieldsKotlin() {
+    val sources = arrayOf("no_fields.proto")
+    compileToKotlin(sources)
+
+    val outputs = arrayOf("com/squareup/wire/protos/kotlin/NoFields.kt")
+    assertKotlinOutputs(outputs)
+  }
+
+  @Test
+  fun testToStringKotlin() {
+    val sources = arrayOf("to_string.proto")
+    compileToKotlin(sources)
+
+    val outputs = arrayOf("com/squareup/wire/protos/kotlin/VeryLongProtoNameCausingBrokenLineBreaks.kt")
     assertKotlinOutputs(outputs)
   }
 
@@ -579,12 +630,12 @@ class WireCompilerTest {
 
   private enum class TargetLanguage {
     JAVA {
-      override fun protoPathArg() = "--proto_path=../wire-tests/src/test/proto"
+      override fun protoPathArg() = "--proto_path=../wire-tests/src/commonTest/proto/java"
       override fun outArg(testDirPath: String) = "--java_out=$testDirPath"
       override fun protoFolderSuffix() = "java"
     },
     KOTLIN {
-      override fun protoPathArg() = "--proto_path=../wire-tests/src/test/proto/kotlin"
+      override fun protoPathArg() = "--proto_path=../wire-tests/src/commonTest/proto/kotlin"
       override fun outArg(testDirPath: String) = "--kotlin_out=$testDirPath"
       override fun protoFolderSuffix() = "kotlin"
     };
@@ -594,14 +645,28 @@ class WireCompilerTest {
     internal abstract fun protoFolderSuffix(): String
 
     internal fun expectedFile(path: String, suffix: String): File {
-      val protoFolder = "/proto-${protoFolderSuffix()}/"
-      var expectedFile = File("../wire-tests/src/test$protoFolder$path$suffix")
-      if (expectedFile.exists()) {
-        println("Comparing against expected output ${expectedFile.name}")
-      } else {
-        expectedFile = File("../wire-tests/src/test$protoFolder$path")
+      val sourceSet = when (val protoFolderSuffix = protoFolderSuffix()) {
+        "kotlin" -> when (suffix) {
+          "" -> if (path.contains("kotlin/services/")) "jvmKotlinInteropTest" else "commonTest"
+          ".java.interop" -> "jvmKotlinInteropTest"
+          ".android" -> "jvmKotlinAndroidTest"
+          else -> throw AssertionError("Unknown suffix: $suffix")
+        }
+        "java" -> when (suffix) {
+          "" -> "jvmJavaTest"
+          ".noOptions" -> "jvmJavaNoOptionsTest"
+          ".compact" -> "jvmJavaCompactTest"
+          ".pruned" -> "jvmJavaPrunedTest"
+          ".android" -> "jvmJavaAndroidTest"
+          ".android.compact" -> "jvmJavaAndroidCompactTest"
+          else -> throw AssertionError("Unknown suffix: $suffix")
+        }
+        else -> throw AssertionError("Unknown proto folder suffix: $protoFolderSuffix")
       }
-      return expectedFile
+      val expectedFile = File("../wire-tests/src/$sourceSet/proto-${protoFolderSuffix()}/$path")
+      return expectedFile.also {
+        println("Comparing against expected output $name")
+      }
     }
   }
 }

@@ -25,7 +25,7 @@ class EnumConstant private constructor(
   val options: Options
 ) {
   internal fun toElement() =
-    EnumConstantElement(location, name, tag, documentation, options.toElements())
+    EnumConstantElement(location, name, tag, documentation, options.elements)
 
   internal fun linkOptions(linker: Linker) = options.link(linker)
 
@@ -33,6 +33,9 @@ class EnumConstant private constructor(
     schema: Schema,
     markSet: MarkSet
   ) = EnumConstant(location, name, tag, documentation, options.retainAll(schema, markSet))
+
+  internal fun retainLinked() =
+      EnumConstant(location, name, tag, documentation, options.retainLinked())
 
   companion object {
     internal fun fromElements(elements: List<EnumConstantElement>) =

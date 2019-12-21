@@ -17,6 +17,9 @@ package com.squareup.wire.schema
 
 import com.google.common.jimfs.Configuration
 import com.google.common.jimfs.Jimfs
+import com.squareup.wire.testing.add
+import com.squareup.wire.testing.addZip
+import com.squareup.wire.testing.symlink
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
 import kotlin.test.assertFailsWith
@@ -76,28 +79,40 @@ class NewSchemaLoaderTest {
         |}
         """.trimMargin())
 
-    val sourcePath = listOf(Location.get("colors/src/main/proto"))
-    val protoPath = listOf(Location.get("polygons/src/main/proto"), Location.get("lib/curves.zip"))
-    val loader = NewSchemaLoader(fs, sourcePath, protoPath)
-    val protoFiles = loader.use { it.load() }
-    assertThat(protoFiles.map { it.location().path }).containsExactlyInAnyOrder(
-        "squareup/colors/blue.proto",
-        "squareup/colors/red.proto",
-        "squareup/curves/circle.proto",
-        "squareup/curves/oval.proto",
-        "squareup/polygons/triangle.proto"
-    )
-    assertThat(loader.sourceLocationPaths).containsExactlyInAnyOrder(
-        "squareup/colors/blue.proto",
-        "squareup/colors/red.proto"
-    )
+    NewSchemaLoader(fs).use { loader ->
+      loader.initRoots(
+          sourcePath = listOf(
+              Location.get("colors/src/main/proto")
+          ),
+          protoPath = listOf(
+              Location.get("polygons/src/main/proto"),
+              Location.get("lib/curves.zip")
+          )
+      )
+      val sourcePathFiles = loader.loadSourcePathFiles()
+      assertThat(sourcePathFiles.map { it.location }).containsExactly(
+          Location.get("colors/src/main/proto", "squareup/colors/blue.proto"),
+          Location.get("colors/src/main/proto", "squareup/colors/red.proto")
+      )
+      assertThat(loader.load("google/protobuf/descriptor.proto").location)
+          .isEqualTo(Location.get("google/protobuf/descriptor.proto"))
+      assertThat(loader.load("squareup/curves/circle.proto").location)
+          .isEqualTo(Location.get("lib/curves.zip", "squareup/curves/circle.proto"))
+      assertThat(loader.load("squareup/curves/oval.proto").location)
+          .isEqualTo(Location.get("lib/curves.zip", "squareup/curves/oval.proto"))
+      assertThat(loader.load("squareup/polygons/triangle.proto").location)
+          .isEqualTo(Location.get("polygons/src/main/proto", "squareup/polygons/triangle.proto"))
+      loader.reportLoadingErrors()
+    }
   }
 
   @Test
   fun noSourcesFound() {
-    val sourcePath = listOf<Location>()
     val exception = assertFailsWith<IllegalArgumentException> {
-      NewSchemaLoader(fs, sourcePath).use { it.load() }
+      NewSchemaLoader(fs).use { loader ->
+        loader.initRoots(sourcePath = listOf())
+        loader.loadSourcePathFiles()
+      }
     }
     assertThat(exception).hasMessage("no sources")
   }
@@ -111,8 +126,14 @@ class NewSchemaLoaderTest {
         |}
         """.trimMargin())
 
-    val sourcePath = listOf(Location.get("colors/src/main/proto", "squareup/shapes/blue.proto"))
-    NewSchemaLoader(fs, sourcePath).use { it.load() }
+    NewSchemaLoader(fs).use { loader ->
+      loader.initRoots(
+          sourcePath = listOf(Location.get("colors/src/main/proto", "squareup/shapes/blue.proto"))
+      )
+      val sourcePathFiles = loader.loadSourcePathFiles()
+      assertThat(sourcePathFiles.map { it.location.path })
+          .containsExactly("squareup/shapes/blue.proto")
+    }
   }
 
   @Test
@@ -124,9 +145,13 @@ class NewSchemaLoaderTest {
         |}
         """.trimMargin())
 
-    val sourcePath = listOf(Location.get("colors/src/main/proto/squareup/shapes/blue.proto"))
     val exception = assertFailsWith<IllegalArgumentException> {
-      NewSchemaLoader(fs, sourcePath).use { it.load() }
+      NewSchemaLoader(fs).use { loader ->
+        loader.initRoots(
+            sourcePath = listOf(Location.get("colors/src/main/proto/squareup/shapes/blue.proto"))
+        )
+        loader.loadSourcePathFiles()
+      }
     }
     assertThat(exception).hasMessage("expected colors/src/main/proto/squareup/shapes/blue.proto " +
         "to have a path ending with squareup/colors/blue.proto")
@@ -148,13 +173,220 @@ class NewSchemaLoaderTest {
         |}
         """.trimMargin())
 
-    val sourcePath = listOf(Location.get("colors/src/main/proto"))
-    val protoPath = listOf(Location.get("curves/src/main/proto", "squareup/curves/circle.proto"))
-    val loader = NewSchemaLoader(fs, sourcePath, protoPath)
-    val protoFiles = loader.use { it.load() }
-    assertThat(protoFiles.map { it.location().path }).containsExactlyInAnyOrder(
-        "squareup/colors/blue.proto",
-        "squareup/curves/circle.proto"
+    NewSchemaLoader(fs).use { loader ->
+      loader.initRoots(
+          sourcePath = listOf(Location.get("colors/src/main/proto")),
+          protoPath = listOf(Location.get("curves/src/main/proto", "squareup/curves/circle.proto"))
+      )
+      val sourcePathFiles = loader.loadSourcePathFiles()
+      assertThat(sourcePathFiles.map { it.location.path }).containsExactlyInAnyOrder(
+          "squareup/colors/blue.proto"
+      )
+      assertThat(loader.load("google/protobuf/descriptor.proto").location)
+          .isEqualTo(Location.get("google/protobuf/descriptor.proto"))
+      assertThat(loader.load("squareup/curves/circle.proto").location)
+          .isEqualTo(Location.get("curves/src/main/proto", "squareup/curves/circle.proto"))
+    }
+  }
+
+  @Test
+  fun symlinkDirectory() {
+    fs.add("secret/proto/squareup/colors/blue.proto", """
+        |syntax = "proto2";
+        |package squareup.colors;
+        |message Blue {
+        |}
+        """.trimMargin())
+    fs.symlink(
+        "colors/src/main/proto",
+        "../../../secret/proto"
+    )
+
+    NewSchemaLoader(fs).use { loader ->
+      loader.initRoots(
+          sourcePath = listOf(Location.get("colors/src/main/proto"))
+      )
+      val sourcePathFiles = loader.loadSourcePathFiles()
+      assertThat(sourcePathFiles.map { it.location }).containsExactly(
+          Location("colors/src/main/proto", "squareup/colors/blue.proto"))
+    }
+  }
+
+  @Test
+  fun symlinkFile() {
+    fs.add("secret/proto/squareup/colors/blue.proto", """
+        |syntax = "proto2";
+        |package squareup.colors;
+        |message Blue {
+        |}
+        """.trimMargin())
+    fs.symlink(
+        "colors/src/main/proto/squareup/colors/blue.proto",
+        "../../../../../../secret/proto/squareup/colors/blue.proto"
+    )
+
+    NewSchemaLoader(fs).use { loader ->
+      loader.initRoots(
+          sourcePath = listOf(Location.get("colors/src/main/proto"))
+      )
+      val sourcePathFiles = loader.loadSourcePathFiles()
+      assertThat(sourcePathFiles.map { it.location }).containsExactlyInAnyOrder(
+          Location("colors/src/main/proto", "squareup/colors/blue.proto")
+      )
+    }
+  }
+
+  @Test
+  fun importNotFound() {
+    fs.add("colors/src/main/proto/squareup/colors/blue.proto", """
+        |syntax = "proto2";
+        |package squareup.colors;
+        |import "squareup/curves/circle.proto";
+        |import "squareup/polygons/rectangle.proto";
+        |message Blue {
+        |}
+        """.trimMargin())
+    fs.add("polygons/src/main/proto/squareup/polygons/triangle.proto", """
+        |syntax = "proto2";
+        |package squareup.polygons;
+        |message Triangle {
+        |}
+        """.trimMargin())
+    fs.addZip("lib/curves.zip",
+        "squareup/curves/oval.proto" to """
+        |syntax = "proto2";
+        |package squareup.curves;
+        |message Oval {
+        |}
+        """.trimMargin())
+
+    val exception = assertFailsWith<IllegalArgumentException> {
+      NewSchemaLoader(fs).use { loader ->
+        loader.initRoots(
+            sourcePath = listOf(
+                Location.get("colors/src/main/proto")
+            ),
+            protoPath = listOf(
+                Location.get("polygons/src/main/proto"),
+                Location.get("lib/curves.zip")
+            )
+        )
+        loader.loadSourcePathFiles()
+        loader.load("squareup/curves/circle.proto")
+        loader.load("squareup/polygons/rectangle.proto")
+        loader.reportLoadingErrors()
+      }
+    }
+    assertThat(exception).hasMessage("""
+        |unable to resolve 2 imports:
+        |  squareup/curves/circle.proto
+        |  squareup/polygons/rectangle.proto
+        |searching 2 proto paths:
+        |  polygons/src/main/proto
+        |  lib/curves.zip
+        """.trimMargin())
+  }
+
+  @Test
+  fun ambiguousImport() {
+    fs.add("colors/src/main/proto/squareup/colors/blue.proto", """
+        |syntax = "proto2";
+        |package squareup.colors;
+        |import "squareup/curves/circle.proto";
+        |message Blue {
+        |}
+        """.trimMargin())
+    fs.add("polygons/src/main/proto/squareup/curves/circle.proto", """
+        |syntax = "proto2";
+        |package squareup.curves;
+        |message Circle {
+        |}
+        """.trimMargin())
+    fs.addZip("lib/curves.zip",
+        "squareup/curves/circle.proto" to """
+        |syntax = "proto2";
+        |package squareup.curves;
+        |message Circle {
+        |}
+        """.trimMargin())
+
+    val exception = assertFailsWith<IllegalArgumentException> {
+      NewSchemaLoader(fs).use { loader ->
+        loader.initRoots(
+            sourcePath = listOf(
+                Location.get("colors/src/main/proto")
+            ),
+            protoPath = listOf(
+                Location.get("polygons/src/main/proto"),
+                Location.get("lib/curves.zip")
+            )
+        )
+        loader.loadSourcePathFiles()
+        loader.load("squareup/curves/circle.proto")
+        loader.reportLoadingErrors()
+      }
+    }
+    assertThat(exception).hasMessage("""
+        |squareup/curves/circle.proto is ambiguous:
+        |  lib/curves.zip/squareup/curves/circle.proto
+        |  polygons/src/main/proto/squareup/curves/circle.proto
+        """.trimMargin())
+  }
+
+  @Test
+  fun locationsToCheck() {
+    val newSchemaLoader = NewSchemaLoader(fs)
+    val result = newSchemaLoader.locationsToCheck("java", listOf(
+        Location.get("shared-protos.jar", "squareup/cash/money/Money.proto"),
+        Location.get("src/main/proto", "squareup/cash/Service.proto"),
+        Location.get("src/main/proto", "squareup/cash/cashtags/Cashtag.proto"),
+        Location.get("src/main/proto", "squareup/cash/payments/Payment.proto")
+    ))
+    assertThat(result).containsExactlyInAnyOrder(
+        Location.get("shared-protos.jar", "java.wire"),
+        Location.get("shared-protos.jar", "squareup/cash/java.wire"),
+        Location.get("shared-protos.jar", "squareup/cash/money/java.wire"),
+        Location.get("shared-protos.jar", "squareup/java.wire"),
+        Location.get("src/main/proto", "java.wire"),
+        Location.get("src/main/proto", "squareup/cash/cashtags/java.wire"),
+        Location.get("src/main/proto", "squareup/cash/java.wire"),
+        Location.get("src/main/proto", "squareup/cash/payments/java.wire"),
+        Location.get("src/main/proto", "squareup/java.wire")
+    )
+  }
+
+  @Test
+  fun pathsToAttempt() {
+    val newSchemaLoader = NewSchemaLoader(fs)
+    val result = newSchemaLoader.locationsToCheck("android", listOf(
+        Location.get("/a/b", "c/d/e.proto")
+    ))
+    assertThat(result).containsExactlyInAnyOrder(
+        Location.get("/a/b", "c/d/android.wire"),
+        Location.get("/a/b", "c/android.wire"),
+        Location.get("/a/b", "android.wire")
+    )
+  }
+
+  @Test
+  fun pathsToAttemptMultipleRoots() {
+    val newSchemaLoader = NewSchemaLoader(fs)
+    val result = newSchemaLoader.locationsToCheck("android", listOf(
+        Location.get("/a/b", "c/d/e.proto"),
+        Location.get("/a/b", "c/f/g/h.proto"),
+        Location.get("/i/j.zip", "k/l/m.proto"),
+        Location.get("/i/j.zip", "k/l/m/n.proto")
+    ))
+    assertThat(result).containsExactlyInAnyOrder(
+        Location.get("/a/b", "c/d/android.wire"),
+        Location.get("/a/b", "c/android.wire"),
+        Location.get("/a/b", "android.wire"),
+        Location.get("/a/b", "c/f/g/android.wire"),
+        Location.get("/a/b", "c/f/android.wire"),
+        Location.get("/i/j.zip", "k/l/android.wire"),
+        Location.get("/i/j.zip", "k/android.wire"),
+        Location.get("/i/j.zip", "android.wire"),
+        Location.get("/i/j.zip", "k/l/m/android.wire")
     )
   }
 }

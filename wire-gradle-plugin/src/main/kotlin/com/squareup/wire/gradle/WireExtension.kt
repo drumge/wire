@@ -18,16 +18,11 @@ package com.squareup.wire.gradle
 import org.gradle.api.Action
 import org.gradle.api.Project
 import org.gradle.api.file.SourceDirectorySet
-import org.gradle.api.internal.file.SourceDirectorySetFactory
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
-import javax.inject.Inject
 
-open class WireExtension(
-  project: Project,
-  private val sourceDirectorySetFactory: SourceDirectorySetFactory
-) {
+open class WireExtension(project: Project) {
   private val objectFactory = project.objects
 
   internal val sourcePaths = mutableSetOf<String>()
@@ -38,6 +33,8 @@ open class WireExtension(
   internal val protoJars = mutableSetOf<ProtoRootSet>()
   internal val roots = mutableSetOf<String>()
   internal val prunes = mutableSetOf<String>()
+  internal var oldest: String? = null
+  internal var newest: String? = null
 
   @Input
   @Optional
@@ -61,6 +58,37 @@ open class WireExtension(
     this.prunes.addAll(prunes)
   }
 
+  @Input
+  @Optional
+  fun oldest() = oldest
+
+  /**
+   * See [com.squareup.wire.schema.WireRun.oldest]
+   */
+  fun oldest(oldest: String) {
+    this.oldest = oldest
+  }
+
+  @Input
+  @Optional
+  fun newest() = newest
+
+  /**
+   * See [com.squareup.wire.schema.WireRun.newest]
+   */
+  fun newest(newest: String) {
+    this.newest = newest
+  }
+
+
+  /**
+   * Sets oldest and newest to the same version.
+   */
+  fun version(version: String) {
+    this.oldest = version
+    this.newest = version
+  }
+
   /**
    * A user-provided file listing [roots] and [prunes]
    */
@@ -68,21 +96,9 @@ open class WireExtension(
   @get:Optional
   var rules: String? = null
 
-  /**
-   * Defines java-specific settings for [com.squareup.wire.schema.WireRun.targets]
-   * Maps to [com.squareup.wire.schema.Target.JavaTarget]
-   */
+  /** Specified what types to output where. Maps to [com.squareup.wire.schema.Target] */
   @get:Input
-  @get:Optional
-  var javaTarget: JavaTarget? = null
-
-  /**
-   * Defines kotlin-specific settings for [com.squareup.wire.schema.WireRun.targets]
-   * Maps to [com.squareup.wire.schema.Target.KotlinTarget]
-   */
-  @get:Input
-  @get:Optional
-  var kotlinTarget: KotlinTarget? = null
+  val outputs = mutableListOf<WireOutput>()
 
   @InputFiles
   @Optional
@@ -162,7 +178,7 @@ open class WireExtension(
 
     if (hasSrcDirs) {
       // map to SourceDirectorySet which does the work for us!
-      val protoTree = sourceDirectorySetFactory.create(name)
+      val protoTree = objectFactory.sourceDirectorySet(name, "Wire proto sources for $name.")
       protoTree.srcDirs(protoRootSet.srcDirs)
       protoTree.filter.include("**/*.proto")
       protoTree.filter.include(protoRootSet.includes)
@@ -174,14 +190,22 @@ open class WireExtension(
     }
   }
 
-  fun java(action: Action<JavaTarget>) {
-    javaTarget = objectFactory.newInstance(JavaTarget::class.java)
-    action.execute(javaTarget!!)
+  fun java(action: Action<JavaOutput>) {
+    val javaOutput = objectFactory.newInstance(JavaOutput::class.java)
+    action.execute(javaOutput)
+    outputs += javaOutput
   }
 
-  fun kotlin(action: Action<KotlinTarget>) {
-    kotlinTarget = objectFactory.newInstance(KotlinTarget::class.java)
-    action.execute(kotlinTarget!!)
+  fun kotlin(action: Action<KotlinOutput>) {
+    val kotlinOutput = objectFactory.newInstance(KotlinOutput::class.java)
+    action.execute(kotlinOutput)
+    outputs += kotlinOutput
+  }
+
+  fun custom(action: Action<CustomOutput>) {
+    val customOutput = objectFactory.newInstance(CustomOutput::class.java)
+    action.execute(customOutput)
+    outputs += customOutput
   }
 
   open class ProtoRootSet {
@@ -204,22 +228,5 @@ open class WireExtension(
     fun include(vararg includePaths: String) {
       includes += includePaths
     }
-  }
-
-  open class JavaTarget @Inject constructor() {
-    var elements: List<String>? = null
-    var out: String? = null
-    var android: Boolean = false
-    var androidAnnotations: Boolean = false
-    var compact: Boolean = false
-  }
-
-  open class KotlinTarget @Inject constructor() {
-    var out: String? = null
-    var elements: List<String>? = null
-    var android: Boolean = false
-    var javaInterop: Boolean = false
-    var blockingServices: Boolean = false
-    var singleMethodServices: Boolean = false
   }
 }
