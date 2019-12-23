@@ -20,6 +20,8 @@ import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.WireField
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.util.Locale
+import okio.ByteString
 
 /**
  * Read, write, and describe a tag within a message. This class knows how to assign fields to a
@@ -33,6 +35,7 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   val label: WireField.Label = wireField.label
   val name: String = messageField.name
   val tag: Int = wireField.tag
+  val returnDefaultValue: Boolean = wireField.returnDefaultValue
   private val keyAdapterString = wireField.keyAdapter
   private val adapterString = wireField.adapter
   val redacted: Boolean = wireField.redacted
@@ -43,6 +46,8 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   private var singleAdapter: ProtoAdapter<*>? = null
   private var keyAdapter: ProtoAdapter<*>? = null
   private var adapter: ProtoAdapter<Any>? = null
+  private var defaultValue: Any? = null
+  private var hadReflectDefaultValue: Boolean = false
 
   val isMap: Boolean
     get() = keyAdapterString.isNotEmpty()
@@ -119,6 +124,13 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
     }
   }
 
+  internal fun defaultValue(builder: B) {
+    val value: Any? = getDefaultValue()
+    if (value != null) {
+      value(builder, value!!)
+    }
+  }
+
   /** Assign a single value for required/optional fields, or a list for repeated/packed fields. */
   operator fun set(builder: B, value: Any?) {
     if (label.isOneOf) {
@@ -131,6 +143,28 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   }
 
   operator fun get(message: M): Any? = messageField.get(message)
+
+  private fun getDefaultValue(): Any? {
+    if (defaultValue == null) {
+      if (!hadReflectDefaultValue) {
+        val defaultFieldName = "DEFAULT_" + name.toUpperCase(Locale.US)
+        try {
+          val defaultField: Field = messageField.declaringClass.getField(defaultFieldName)
+          defaultValue = defaultField.get(null)
+        } catch (e: Exception) {
+          defaultValue = adapter().decode(ByteString.EMPTY)
+        } finally {
+          hadReflectDefaultValue = true
+        }
+      }
+//      defaultValue = unboxNonnull(fieldType)
+
+          if (defaultValue == null) {
+            defaultValue = adapter().decode(ByteString.EMPTY)
+          }
+    }
+    return defaultValue
+  }
 
   internal fun getFromBuilder(builder: B): Any? = builderField.get(builder)
 }

@@ -44,7 +44,12 @@ annotation class WireField(
   /**
    * Redacted fields are omitted from toString() to protect sensitive data. Defaults to false.
    */
-  val redacted: Boolean = false
+  val redacted: Boolean = false,
+
+  /**
+   * whiter return default value
+   */
+  val returnDefaultValue: Boolean = true
 ) {
 
   /** A protocol buffer label.  */

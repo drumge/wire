@@ -76,7 +76,7 @@ actual abstract class ProtoAdapter<E> actual constructor(
   }
 
   @Throws(IOException::class)
-  actual abstract fun decode(reader: ProtoReader): E
+  actual open abstract fun decode(reader: ProtoReader): E
 
   @Throws(IOException::class)
   actual fun decode(bytes: ByteArray): E {

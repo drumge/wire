@@ -25,6 +25,7 @@ import com.squareup.wire.WireField
 import java.io.IOException
 import java.util.Collections
 import java.util.LinkedHashMap
+import android.util.Log
 
 class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
   private val messageType: Class<M>,
@@ -111,6 +112,7 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
   override fun decode(reader: ProtoReader): M {
     val builder = newBuilder()
     val token = reader.beginMessage()
+    val tags = mutableListOf<Int>()
     while (true) {
       val tag = reader.nextTag()
       if (tag == -1) break
@@ -122,8 +124,13 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
           } else {
             fieldBinding.singleAdapter()
           }
-          val value = adapter.decode(reader)
-          fieldBinding.value(builder, value!!)
+          val value: Any? = adapter.decode(reader)
+          if (value != null) {
+            fieldBinding.value(builder, value!!)
+          } else {
+            fieldBinding.defaultValue(builder)
+          }
+          tags.add(tag)
         } else {
           val fieldEncoding = reader.peekFieldEncoding()!!
           val value = fieldEncoding.rawProtoAdapter().decode(reader)
@@ -136,6 +143,15 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
 
     }
     reader.endMessageAndGetUnknownFields(token) // Ignore return value
+
+    fieldBindings.values.forEach { field ->
+      if (field.returnDefaultValue && !tags.contains(field.tag)) {
+        val binding = field.getFromBuilder(builder)
+        if (binding == null) {
+          field.defaultValue(builder)
+        }
+      }
+    }
 
     return builder.build()
   }
