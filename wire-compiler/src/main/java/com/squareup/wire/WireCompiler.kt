@@ -96,7 +96,8 @@ class WireCompiler internal constructor(
   val emitAndroid: Boolean,
   val emitAndroidAnnotations: Boolean,
   val emitCompact: Boolean,
-  val javaInterop: Boolean
+  val javaInterop: Boolean,
+  val returnDefaultValue: Boolean
 ) {
 
   @Throws(IOException::class)
@@ -143,6 +144,7 @@ class WireCompiler internal constructor(
             .load()
 
         val javaGenerator = JavaGenerator.get(schema)
+            .withReturnDefaultValue(returnDefaultValue)
             .withProfile(profile)
             .withAndroid(emitAndroid)
             .withAndroidAnnotations(emitAndroidAnnotations)
@@ -198,6 +200,7 @@ class WireCompiler internal constructor(
     private const val ANDROID_ANNOTATIONS = "--android-annotations"
     private const val COMPACT = "--compact"
     private const val JAVA_INTEROP = "--java_interop"
+    private const val RETURN_DEFAULT_VALUE = "--return_default_value"
     private const val MAX_WRITE_CONCURRENCY = 8
     private const val DESCRIPTOR_PROTO = "google/protobuf/descriptor.proto"
 
@@ -233,6 +236,7 @@ class WireCompiler internal constructor(
       var emitAndroidAnnotations = false
       var emitCompact = false
       var javaInterop = false
+      var returnDefaultValue = false
 
       for (arg in args) {
         when {
@@ -281,6 +285,7 @@ class WireCompiler internal constructor(
           arg == ANDROID_ANNOTATIONS -> emitAndroidAnnotations = true
           arg == COMPACT -> emitCompact = true
           arg == JAVA_INTEROP -> javaInterop = true
+          arg == RETURN_DEFAULT_VALUE -> returnDefaultValue = true
           arg.startsWith("--") -> throw IllegalArgumentException("Unknown argument '$arg'.")
           else -> sourceFileNames.add(arg)
         }
@@ -294,7 +299,7 @@ class WireCompiler internal constructor(
 
       return WireCompiler(fileSystem, logger, protoPaths, javaOut, kotlinOut, sourceFileNames,
           pruningRulesBuilder.build(), dryRun, namedFilesOnly, emitAndroid, emitAndroidAnnotations,
-          emitCompact, javaInterop)
+          emitCompact, javaInterop, returnDefaultValue)
     }
   }
 }

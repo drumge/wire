@@ -192,35 +192,42 @@ public final class JavaGenerator {
   private final boolean emitAndroid;
   private final boolean emitAndroidAnnotations;
   private final boolean emitCompact;
+  private final boolean returnDefaultValue;
 
   private JavaGenerator(Schema schema, Map<ProtoType, ClassName> nameToJavaName, Profile profile,
-      boolean emitAndroid, boolean emitAndroidAnnotations, boolean emitCompact) {
+      boolean emitAndroid, boolean emitAndroidAnnotations, boolean emitCompact, boolean returnDefaultValue) {
     this.schema = schema;
     this.nameToJavaName = ImmutableMap.copyOf(nameToJavaName);
     this.profile = profile;
     this.emitAndroid = emitAndroid;
     this.emitAndroidAnnotations = emitAndroidAnnotations || emitAndroid;
     this.emitCompact = emitCompact;
+    this.returnDefaultValue = returnDefaultValue;
   }
 
   public JavaGenerator withAndroid(boolean emitAndroid) {
     return new JavaGenerator(schema, nameToJavaName, profile, emitAndroid, emitAndroidAnnotations,
-        emitCompact);
+        emitCompact, returnDefaultValue);
   }
 
   public JavaGenerator withAndroidAnnotations(boolean emitAndroidAnnotations) {
     return new JavaGenerator(schema, nameToJavaName, profile, emitAndroid, emitAndroidAnnotations,
-        emitCompact);
+        emitCompact, returnDefaultValue);
   }
 
   public JavaGenerator withCompact(boolean emitCompact) {
     return new JavaGenerator(schema, nameToJavaName, profile, emitAndroid, emitAndroidAnnotations,
-        emitCompact);
+        emitCompact, returnDefaultValue);
   }
 
   public JavaGenerator withProfile(Profile profile) {
     return new JavaGenerator(schema, nameToJavaName, profile, emitAndroid, emitAndroidAnnotations,
-        emitCompact);
+        emitCompact, returnDefaultValue);
+  }
+
+  public JavaGenerator withReturnDefaultValue(boolean returnDefaultValue) {
+    return new JavaGenerator(schema, nameToJavaName, profile, emitAndroid, emitAndroidAnnotations,
+            emitCompact, returnDefaultValue);
   }
 
   public static JavaGenerator get(Schema schema) {
@@ -236,7 +243,7 @@ public final class JavaGenerator {
       }
     }
 
-    return new JavaGenerator(schema, nameToJavaName, new Profile(), false, false, false);
+    return new JavaGenerator(schema, nameToJavaName, new Profile(), false, false, false, false);
   }
 
   private static void putAll(Map<ProtoType, ClassName> wireToJava, String javaPackage,
@@ -1212,6 +1219,10 @@ public final class JavaGenerator {
       result.addMember("redacted", "true");
     }
 
+    if (!returnDefaultValue) {
+      result.addMember("returnDefaultValue", "false");
+    }
+
     return result.build();
   }
 
@@ -1472,7 +1483,11 @@ public final class JavaGenerator {
 
     for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
-      result.addField(fieldType(field), fieldName, PUBLIC);
+      TypeName typeName = fieldType(field);
+      if (typeName.isBoxedPrimitive()) {
+        typeName = typeName.unbox();
+      }
+      result.addField(typeName, fieldName, PUBLIC);
     }
 
     result.addMethod(builderNoArgsConstructor(nameAllocator, type));
