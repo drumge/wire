@@ -108,6 +108,8 @@ public final class JavaGenerator {
   static final ClassName NULLABLE = ClassName.get("androidx.annotation", "Nullable");
   static final ClassName CREATOR = ClassName.get("android.os", "Parcelable", "Creator");
 
+  static final String DEFAULT_INSTANCE_NAME = "__isDefaultInstance";
+
   private static final Ordering<Field> TAG_ORDERING = Ordering.from(new Comparator<Field>() {
     @Override public int compare(Field o1, Field o2) {
       return Integer.compare(o1.getTag(), o2.getTag());
@@ -443,6 +445,7 @@ public final class JavaGenerator {
         }
       }
     }
+
     ImmutableList<ProtoMember> allOptionMembers = ImmutableList.copyOf(allOptionFieldsBuilder);
     String enumArgsFormat = "$L" + Strings.repeat(", $L", allOptionMembers.size());
     builder.addMethod(constructorBuilder.build());
@@ -476,6 +479,7 @@ public final class JavaGenerator {
         constantBuilder.addAnnotation(Deprecated.class);
       }
 
+      // builder.addEnumConstant(constant.getName(), constantBuilder.build());
       builder.addEnumConstant(constant.getName(), constantBuilder.build());
 
       // Ensure constant case tags are unique, which might not be the case if allow_alias is true.
@@ -484,7 +488,18 @@ public final class JavaGenerator {
       }
     }
 
-    builder.addMethod(fromValueBuilder.addStatement("default: return null")
+    //  start 添加 UNRECOGNIZED
+    // TODO 为了兼容原来 pb 解析未定义值，保留了最原始的 int，需要定义一个 UNRECOGNIZED 类型来承载
+    String unrecognized = "UNRECOGNIZED";
+    Object[] enumArgs = new Object[1];
+    enumArgs[0] = -1;
+    TypeSpec.Builder constantBuilder = TypeSpec.anonymousClassBuilder(enumArgsFormat, enumArgs);
+    builder.addEnumConstant(unrecognized, constantBuilder.build());
+    //  end
+
+    // builder.addMethod(fromValueBuilder.addStatement("default: return null")
+    builder.addMethod(fromValueBuilder.addStatement("default: return UNRECOGNIZED")
+    // builder.addMethod(fromValueBuilder.addCode("default: {UNRECOGNIZED.value = value; return UNRECOGNIZED;}")
         .endControlFlow()
         .build());
 
@@ -605,7 +620,42 @@ public final class JavaGenerator {
         fieldBuilder.addAnnotation(NULLABLE);
       }
       builder.addField(fieldBuilder.build());
+
+      // start 增加枚举最原始值
+      if (needEnumValue(field)) {
+        String enumValueName = enumValueName(fieldName);
+        FieldSpec.Builder enumValueBuilder = FieldSpec.builder(int.class,
+                enumValueName,
+                PRIVATE);
+        String defaultFieldName = "DEFAULT_" + nameAllocator.get(field).toUpperCase(Locale.US);
+        enumValueBuilder.initializer(defaultFieldName + ".getValue()");
+        enumValueBuilder.addJavadoc("对应 $L 枚举类型的原始int，反序列化出来的值可以从这里取\n", fieldName);
+        builder.addField(enumValueBuilder.build());
+
+        String enumMethodName = "get" + captureName(fieldName) + "Value";
+        MethodSpec enumMethod = MethodSpec.methodBuilder(enumMethodName)
+                .returns(int.class)
+                .addJavadoc("对应 $L 枚举类型的原始int，反序列化出来的值可以从这里取\n", fieldName)
+                .addModifiers(FINAL, PUBLIC)
+                .addCode("return $L;\n", enumValueName)
+                .build();
+        builder.addMethod(enumMethod);
+      }
+      // end
     }
+
+    // start 默认实例标识
+    FieldSpec.Builder dif = FieldSpec.builder(boolean.class,
+            DEFAULT_INSTANCE_NAME, PRIVATE).initializer("true");;
+    builder.addField(dif.build());
+    MethodSpec dim = MethodSpec.methodBuilder(DEFAULT_INSTANCE_NAME)
+            .returns(boolean.class)
+            .addJavadoc("true--反序列化为null，给一个默认的实例；false--反序列化出来的实例\n")
+            .addModifiers(FINAL, PUBLIC)
+            .addCode("return $L;\n", DEFAULT_INSTANCE_NAME)
+            .build();
+    builder.addMethod(dim);
+    //end
 
     if (constructorTakesAllFields) {
       builder.addMethod(messageFieldsConstructor(nameAllocator, type));
@@ -633,6 +683,30 @@ public final class JavaGenerator {
     }
 
     return builder.build();
+  }
+
+  // start 枚举保存原始值属性名字
+  private String enumValueName(String fieldName) {
+    return "_" + fieldName + "_value";
+  }
+
+  private boolean needEnumValue(Field field) {
+    return !field.isRepeated() && !field.getType().isMap() && isEnum(field.getType());
+  }
+  // end
+
+  /**
+   * 将字符串的首字母转大写
+   * @param str 需要转换的字符串
+   * @return
+   */
+  private static String captureName(String str) {
+    // 进行字母的ascii编码前移，效率要高于截取字符串进行转换的操作
+    char[] chars=str.toCharArray();
+    if (chars[0] >= 'a' && chars[0] <= 'z') {
+      chars[0] = (char)(chars[0] - 32);
+    }
+    return String.valueOf(chars);
   }
 
   /**
@@ -1264,7 +1338,16 @@ public final class JavaGenerator {
       }
       result.addParameter(param.build());
       result.addCode("$L, ", fieldName);
+
+      // start 增加构造方法参数
+      if (needEnumValue(field)) {
+        String enumeValueName = enumValueName(fieldName);
+        result.addParameter(int.class, enumeValueName);
+        result.addCode("$L, ", enumeValueName);
+      }
+      // end
     }
+
     result.addCode("$T.EMPTY);\n", BYTE_STRING);
     return result.build();
   }
@@ -1332,6 +1415,11 @@ public final class JavaGenerator {
           param.addAnnotation(NULLABLE);
         }
         result.addParameter(param.build());
+        // start 增加构造方法参数
+        if (needEnumValue(field)) {
+          result.addParameter(int.class, enumValueName(fieldName));
+        }
+        // end
       }
 
       if (field.isRepeated() || field.getType().isMap()) {
@@ -1340,6 +1428,12 @@ public final class JavaGenerator {
       } else {
         result.addStatement("this.$1L = $2L", fieldName, fieldAccessName);
       }
+      // start 枚举类型构造汉函数赋值
+      if (needEnumValue(field)) {
+        String enumValueName = enumValueName(fieldName);
+        result.addStatement("this.$1L = $2L", enumValueName, enumValueName);
+      }
+      // end
     }
 
     if (!constructorTakesAllFields) {
@@ -1387,6 +1481,12 @@ public final class JavaGenerator {
       } else {
         result.addCode("\n&& $1T.equals($2L, $3N.$2L)", Internal.class, fieldName, oName);
       }
+      // start equals 枚举原始值赋值
+      if (needEnumValue(field)) {
+        String enumValueName = enumValueName(fieldName);
+        result.addCode("\n&& $1T.equals($2L, $3N.$2L)", Internal.class, enumValueName, oName);
+      }
+      // end
     }
     result.addCode(";\n$]");
 
@@ -1435,6 +1535,13 @@ public final class JavaGenerator {
       } else {
         result.addStatement("($1L != null ? $1L.hashCode() : 0)", fieldName);
       }
+      // start hashCode 枚举原始值赋值
+      if (needEnumValue(field)) {
+        String enumValueName = enumValueName(fieldName);
+        result.addCode("$1N = $1N * 37 + ", resultName);
+        result.addStatement("$L", enumValueName);
+      }
+      // end
     }
     result.addStatement("super.hashCode = $N", resultName);
     result.endControlFlow();
@@ -1484,10 +1591,18 @@ public final class JavaGenerator {
     for (Field field : type.getFieldsAndOneOfFields()) {
       String fieldName = nameAllocator.get(field);
       TypeName typeName = fieldType(field);
+      // start builder 中基本类型
       if (typeName.isBoxedPrimitive()) {
         typeName = typeName.unbox();
       }
+      // end
       result.addField(typeName, fieldName, PUBLIC);
+      // start builder 增加枚举类型原始值
+      if (needEnumValue(field)) {
+        String enumValueName = enumValueName(fieldName);
+        result.addField(int.class, enumValueName, PRIVATE);
+      }
+      // end
     }
 
     result.addMethod(builderNoArgsConstructor(nameAllocator, type));
@@ -1566,6 +1681,13 @@ public final class JavaGenerator {
       } else {
         result.addStatement("$1L.$2L = $2L", builderName, fieldName);
       }
+
+      // start newBuilder 枚举原始值赋值
+      if (needEnumValue(field)) {
+        String enumValueName = enumValueName(fieldName);
+        result.addStatement("$1L.$2L = $2L", builderName, enumValueName);
+      }
+      // end
     }
 
     result.addStatement("$L.addUnknownFields(unknownFields())", builderName);
@@ -1654,7 +1776,13 @@ public final class JavaGenerator {
     if (constructorTakesAllFields) {
       for (Field field : message.getFieldsAndOneOfFields()) {
         result.addCode("$L, ", nameAllocator.get(field));
+        // start 增加构造方法枚举类型原始值
+        if (needEnumValue(field)) {
+          result.addCode("$L, ", enumValueName(nameAllocator.get(field)));
+        }
+        // end
       }
+
     } else {
       result.addCode("this, ");
     }

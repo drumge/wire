@@ -25,6 +25,8 @@ actual typealias ObjectStreamException = java.io.ObjectStreamException
 
 actual typealias ProtocolException = java.net.ProtocolException
 
+actual typealias ProtocolStateException = java.net.ProtocolException
+
 @Suppress("NOTHING_TO_INLINE") // Syntactic sugar.
 actual inline fun <T> MutableList<T>.toUnmodifiableList(): List<T>
     = Collections.unmodifiableList(this)

@@ -15,13 +15,15 @@
  */
 package com.squareup.wire.internal
 
+import android.util.Log
+import com.squareup.wire.EnumAdapter
 import com.squareup.wire.Message
 import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.WireField
+import okio.ByteString
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.Locale
-import okio.ByteString
 
 /**
  * Read, write, and describe a tag within a message. This class knows how to assign fields to a
@@ -30,7 +32,7 @@ import okio.ByteString
 class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constructor(
   wireField: WireField,
   private val messageField: Field,
-  builderType: Class<B>
+  private val builderType: Class<B>
 ) {
   val label: WireField.Label = wireField.label
   val name: String = messageField.name
@@ -40,6 +42,7 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   private val adapterString = wireField.adapter
   val redacted: Boolean = wireField.redacted
   private val builderField = getBuilderField(builderType, name)
+  private var enumValueField: Field? = null
   private val builderMethod = getBuilderMethod(builderType, name, messageField.type)
 
   // Delegate adapters are created lazily; otherwise we could stack overflow!
@@ -54,8 +57,9 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
 
   private fun getBuilderField(builderType: Class<*>, name: String): Field {
     try {
-      return builderType.getField(name)
-    } catch (_: NoSuchFieldException) {
+      return builderType.getDeclaredField(name)
+    } catch (e: NoSuchFieldException) {
+      e.printStackTrace()
       throw AssertionError("No builder field ${builderType.name}.$name")
     }
   }
@@ -127,7 +131,7 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   internal fun defaultValue(builder: B) {
     val value: Any? = getDefaultValue()
     if (value != null) {
-      value(builder, value!!)
+      value(builder, value)
     }
   }
 
@@ -141,6 +145,25 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
       builderField.set(builder, value)
     }
   }
+
+  fun setEnumValue(builder: B, value: Int) {
+    if (enumValueField == null) {
+      (adapter() as? EnumAdapter)?.let {
+        val enumName = enumValueName(name)
+        enumValueField = getBuilderField(builderType, enumName)
+      }
+    }
+    enumValueField?.let {
+      it.isAccessible = true
+      it.set(builder, value)
+    }
+  }
+
+  // start 枚举保存原始值属性名字
+  private fun enumValueName(fieldName: String): String {
+    return "_" + fieldName + "_value"
+  }
+  // end
 
   operator fun get(message: M): Any? = messageField.get(message)
 

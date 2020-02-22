@@ -34,6 +34,7 @@
 package com.squareup.wire
 
 import com.squareup.wire.internal.ProtocolException
+import com.squareup.wire.internal.ProtocolStateException
 import com.squareup.wire.internal.Throws
 import com.squareup.wire.internal.and
 import com.squareup.wire.internal.shl
@@ -271,7 +272,7 @@ class ProtoReader(private val source: BufferedSource) {
   @Throws(IOException::class)
   fun readVarint32(): Int {
     if (state != STATE_VARINT && state != STATE_LENGTH_DELIMITED) {
-      throw ProtocolException("Expected VARINT or LENGTH_DELIMITED but was $state")
+      throw ProtocolStateException("Expected VARINT or LENGTH_DELIMITED but was $state")
     }
     val result = internalReadVarint32()
     afterPackableScalar(STATE_VARINT)
@@ -332,7 +333,7 @@ class ProtoReader(private val source: BufferedSource) {
   @Throws(IOException::class)
   fun readVarint64(): Long {
     if (state != STATE_VARINT && state != STATE_LENGTH_DELIMITED) {
-      throw ProtocolException("Expected VARINT or LENGTH_DELIMITED but was $state")
+      throw ProtocolStateException("Expected VARINT or LENGTH_DELIMITED but was $state")
     }
     var shift = 0
     var result: Long = 0
@@ -354,7 +355,7 @@ class ProtoReader(private val source: BufferedSource) {
   @Throws(IOException::class)
   fun readFixed32(): Int {
     if (state != STATE_FIXED32 && state != STATE_LENGTH_DELIMITED) {
-      throw ProtocolException("Expected FIXED32 or LENGTH_DELIMITED but was $state")
+      throw ProtocolStateException("Expected FIXED32 or LENGTH_DELIMITED but was $state")
     }
     source.require(4) // Throws EOFException if insufficient bytes are available.
     pos += 4
@@ -367,7 +368,7 @@ class ProtoReader(private val source: BufferedSource) {
   @Throws(IOException::class)
   fun readFixed64(): Long {
     if (state != STATE_FIXED64 && state != STATE_LENGTH_DELIMITED) {
-      throw ProtocolException("Expected FIXED64 or LENGTH_DELIMITED but was $state")
+      throw ProtocolStateException("Expected FIXED64 or LENGTH_DELIMITED but was $state")
     }
     source.require(8) // Throws EOFException if insufficient bytes are available.
     pos += 8
@@ -397,7 +398,7 @@ class ProtoReader(private val source: BufferedSource) {
   @Throws(IOException::class)
   private fun beforeLengthDelimitedScalar(): Long {
     if (state != STATE_LENGTH_DELIMITED) {
-      throw ProtocolException("Expected LENGTH_DELIMITED but was $state")
+      throw ProtocolStateException("Expected LENGTH_DELIMITED but was $state")
     }
     val byteCount = limit - pos
     source.require(byteCount) // Throws EOFException if insufficient bytes are available.

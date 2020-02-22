@@ -26,6 +26,8 @@ import java.io.IOException
 import java.util.Collections
 import java.util.LinkedHashMap
 import android.util.Log
+import com.squareup.wire.AndroidMessage
+import com.squareup.wire.EnumAdapter
 
 class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
   private val messageType: Class<M>,
@@ -113,26 +115,49 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
     val builder = newBuilder()
     val token = reader.beginMessage()
     val tags = mutableListOf<Int>()
-    while (true) {
+    var isDefault = true
+    loop@ while (true) {
       val tag = reader.nextTag()
       if (tag == -1) break
+      val fieldEncoding = reader.peekFieldEncoding()!!
       val fieldBinding = fieldBindings[tag]
       try {
         if (fieldBinding != null) {
+          isDefault = false
           val adapter = if (fieldBinding.isMap) {
             fieldBinding.adapter()
           } else {
             fieldBinding.singleAdapter()
           }
-          val value: Any? = adapter.decode(reader)
+          var value: Any? = null
+          try {
+            // TODO tag 一样，但是wireType不一样，会抛异常
+            if (adapter is EnumAdapter) {
+              val intValue = reader.readVarint32()
+              value = adapter.decode(intValue)
+              fieldBinding.setEnumValue(builder, intValue)
+            } else {
+              value = adapter.decode(reader)
+            }
+          } catch (stateE: ProtocolStateException) {
+            Log.e("RuntimeMessageAdapter", fieldBinding.name + " , tag = " + tag + " , adapter" +
+                " ， fieldBinding.label " + fieldBinding.label +
+                ".fieldEncoding =" +
+                "" + adapter.fieldEncoding + " , fieldEncoding = " + fieldEncoding)
+            reader.readUnknownField(tag)
+            continue@loop
+          }
+
           if (value != null) {
             fieldBinding.value(builder, value!!)
+            if (value is Message<*, *>) {
+              setDefaultFalse(value)
+            }
           } else {
             fieldBinding.defaultValue(builder)
           }
           tags.add(tag)
         } else {
-          val fieldEncoding = reader.peekFieldEncoding()!!
           val value = fieldEncoding.rawProtoAdapter().decode(reader)
           builder.addUnknownField(tag, fieldEncoding, value)
         }
@@ -144,6 +169,7 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
     }
     reader.endMessageAndGetUnknownFields(token) // Ignore return value
 
+    // start 为空时默认返回值
     fieldBindings.values.forEach { field ->
       if (field.returnDefaultValue && !tags.contains(field.tag)) {
         val binding = field.getFromBuilder(builder)
@@ -152,8 +178,24 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
         }
       }
     }
+    // end
 
-    return builder.build()
+    val msg = builder.build()
+//    Log.i("RuntimeMessageAdapter", "" + messageType + " , isDefault = " + isDefault)
+    if (!isDefault) {
+      setDefaultFalse(msg)
+    }
+    return msg
+  }
+
+  private fun setDefaultFalse(msg: Message<*, *>) {
+    try {
+      val defaultInstanceField = msg::class.java.getDeclaredField("__isDefaultInstance")
+      defaultInstanceField.isAccessible = true
+      defaultInstanceField.set(msg, false)
+    } catch (e: Exception) {
+      e.printStackTrace()
+    }
   }
 
   companion object {

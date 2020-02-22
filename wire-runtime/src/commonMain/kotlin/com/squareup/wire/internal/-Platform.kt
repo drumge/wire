@@ -29,6 +29,8 @@ expect abstract class ObjectStreamException : IOException
 
 expect class ProtocolException(host: String) : IOException
 
+expect class ProtocolStateException(host: String) : IOException
+
 expect fun <T> MutableList<T>.toUnmodifiableList(): List<T>
 
 expect fun <K, V> MutableMap<K, V>.toUnmodifiableMap(): Map<K, V>

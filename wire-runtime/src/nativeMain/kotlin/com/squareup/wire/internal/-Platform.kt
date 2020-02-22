@@ -23,6 +23,7 @@ actual interface Serializable
 actual abstract class ObjectStreamException : IOException()
 
 actual class ProtocolException actual constructor(host: String) : IOException(host)
+actual class ProtocolStateException actual constructor(host: String) : IOException(host)
 
 @Suppress("NOTHING_TO_INLINE") // Syntactic sugar.
 actual inline fun <T> MutableList<T>.toUnmodifiableList(): List<T> = this

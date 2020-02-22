@@ -59,6 +59,15 @@ internal inline fun <E : WireEnum> EnumAdapter<E>.commonDecode(
   fromValue: (Int) -> E?
 ): E {
   val value = reader.readVarint32()
+  return commonDecode(value, fromValue)
+//  return fromValue(value) ?: throw ProtoAdapter.EnumConstantNotFoundException(value, type)
+}
+
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun <E : WireEnum> EnumAdapter<E>.commonDecode(
+  value: Int,
+  fromValue: (Int) -> E?
+): E {
   return fromValue(value) ?: throw ProtoAdapter.EnumConstantNotFoundException(value, type)
 }
 
