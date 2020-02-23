@@ -646,7 +646,7 @@ public final class JavaGenerator {
 
     // start 默认实例标识
     FieldSpec.Builder dif = FieldSpec.builder(boolean.class,
-            DEFAULT_INSTANCE_NAME, PRIVATE).initializer("true");;
+            DEFAULT_INSTANCE_NAME, PRIVATE);
     builder.addField(dif.build());
     MethodSpec dim = MethodSpec.methodBuilder(DEFAULT_INSTANCE_NAME)
             .returns(boolean.class)
@@ -1717,6 +1717,13 @@ public final class JavaGenerator {
       result.addStatement("$T.checkElementsNotNull($L)", Internal.class, fieldName);
     }
     result.addStatement("this.$L = $L", fieldName, fieldName);
+
+    // start  builder 增加枚举类型原始值 set 原始值赋值
+    if (needEnumValue(field)) {
+      result.addCode("if ($L != $T.UNRECOGNIZED) {\n $L = $L.getValue();\n}\n",
+              fieldName, javaType, enumValueName(fieldName), fieldName);
+    }
+    // end
 
     if (oneOf != null) {
       for (Field other : oneOf.getFields()) {

@@ -42,7 +42,8 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   private val adapterString = wireField.adapter
   val redacted: Boolean = wireField.redacted
   private val builderField = getBuilderField(builderType, name)
-  private var enumValueField: Field? = null
+  private var enumValueBuilderField: Field? = null
+  private var enumValueMsgField: Field? = null
   private val builderMethod = getBuilderMethod(builderType, name, messageField.type)
 
   // Delegate adapters are created lazily; otherwise we could stack overflow!
@@ -147,16 +148,30 @@ class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constr
   }
 
   fun setEnumValue(builder: B, value: Int) {
-    if (enumValueField == null) {
+    if (enumValueBuilderField == null) {
       (adapter() as? EnumAdapter)?.let {
         val enumName = enumValueName(name)
-        enumValueField = getBuilderField(builderType, enumName)
+        enumValueBuilderField = getBuilderField(builderType, enumName)
       }
     }
-    enumValueField?.let {
+    enumValueBuilderField?.let {
       it.isAccessible = true
       it.set(builder, value)
     }
+  }
+
+  fun getEnumValue(message: M): Int {
+    if (enumValueMsgField == null) {
+      (adapter() as? EnumAdapter)?.let {
+        val enumName = enumValueName(name)
+        enumValueMsgField = getBuilderField(message::class.java, enumName)
+      }
+    }
+    enumValueMsgField?.let {
+      it.isAccessible = true
+      return it.get(message) as? Int ?: -1
+    }
+    return -1
   }
 
   // start 枚举保存原始值属性名字

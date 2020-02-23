@@ -17,6 +17,7 @@ package com.squareup.wire
 
 import java.io.IOException
 import kotlin.reflect.KClass
+import android.util.Log
 
 /**
  * An abstract [ProtoAdapter] that converts values of an enum to and from integers.
@@ -28,9 +29,25 @@ actual abstract class EnumAdapter<E : WireEnum> protected actual constructor(
 
   actual override fun encodedSize(value: E): Int = commonEncodedSize(value)
 
+  fun encodedSize(value: Int): Int = commonEncodedSize(value)
+
+  fun encodedSizeWithTag(tag: Int, value: Int?): Int {
+    if (value == null) return 0
+    var size = encodedSize(value)
+    size += tagSize(tag)
+//    Log.i("EnumAdapter", "encodedSizeWithTag " + size)
+    return size
+  }
+
   @Throws(IOException::class)
   actual override fun encode(writer: ProtoWriter, value: E) {
     commonEncode(writer, value)
+  }
+
+  fun encodeWithTag(writer: ProtoWriter, tag: Int, value: Int?) {
+    if (value == null) return
+    writer.writeTag(tag, fieldEncoding)
+    writer.writeVarint32(value)
   }
 
   @Throws(IOException::class)

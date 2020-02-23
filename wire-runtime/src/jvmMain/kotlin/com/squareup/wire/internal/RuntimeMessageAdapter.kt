@@ -44,7 +44,19 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
     var size = 0
     for (fieldBinding in fieldBindings.values) {
       val binding = fieldBinding[value] ?: continue
-      size += fieldBinding.adapter().encodedSizeWithTag(fieldBinding.tag, binding)
+      val adapter = if (fieldBinding.isMap) {
+        fieldBinding.adapter()
+      } else {
+        fieldBinding.singleAdapter()
+      }
+      if (adapter is EnumAdapter) {
+        val enumValue = fieldBinding.getEnumValue(value)
+        if (enumValue != -1 && enumValue != 0) {
+          size += adapter.encodedSizeWithTag(fieldBinding.tag, enumValue)
+        }
+      } else {
+        size += fieldBinding.adapter().encodedSizeWithTag(fieldBinding.tag, binding)
+      }
     }
     size += value.unknownFields.size
 
@@ -55,8 +67,23 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
   @Throws(IOException::class)
   override fun encode(writer: ProtoWriter, value: M) {
     for (fieldBinding in fieldBindings.values) {
-      val binding = fieldBinding[value] ?: continue
-      fieldBinding.adapter().encodeWithTag(writer, fieldBinding.tag, binding)
+      var binding = fieldBinding[value] ?: continue
+//      Log.i("RuntimeMessageAdapter", "encode " + fieldBinding.name + " , " + fieldBinding.tag +
+//          ", " + binding)
+      val adapter = if (fieldBinding.isMap) {
+        fieldBinding.adapter()
+      } else {
+        fieldBinding.singleAdapter()
+      }
+      if (adapter is EnumAdapter) {
+        val enumValue = fieldBinding.getEnumValue(value)
+        if (enumValue != -1 && enumValue != 0) {
+          adapter.encodeWithTag(writer, fieldBinding.tag, enumValue)
+        }
+      } else {
+        fieldBinding.adapter().encodeWithTag(writer, fieldBinding.tag, binding)
+      }
+//      fieldBinding.adapter().encodeWithTag(writer, fieldBinding.tag, binding)
     }
     writer.writeBytes(value.unknownFields)
   }

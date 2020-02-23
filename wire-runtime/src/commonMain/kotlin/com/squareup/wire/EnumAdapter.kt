@@ -49,6 +49,16 @@ internal inline fun <E : WireEnum> commonEncodedSize(value: E): Int {
 }
 
 @Suppress("NOTHING_TO_INLINE")
+internal inline fun commonEncodedSize(value: Int): Int {
+  return ProtoWriter.varint32Size(value)
+}
+
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun tagSize(tag: Int): Int {
+  return ProtoWriter.tagSize(tag)
+}
+
+@Suppress("NOTHING_TO_INLINE")
 internal inline fun <E : WireEnum> commonEncode(writer: ProtoWriter, value: E) {
   writer.writeVarint32(value.value)
 }
