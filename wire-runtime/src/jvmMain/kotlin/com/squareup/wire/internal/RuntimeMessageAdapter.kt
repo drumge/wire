@@ -22,6 +22,7 @@ import com.squareup.wire.ProtoAdapter
 import com.squareup.wire.ProtoReader
 import com.squareup.wire.ProtoWriter
 import com.squareup.wire.WireField
+import com.squareup.wire.WireLog
 import java.io.IOException
 import java.util.Collections
 import java.util.LinkedHashMap
@@ -49,9 +50,9 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       } else {
         fieldBinding.singleAdapter()
       }
-      if (adapter is EnumAdapter) {
+      if (!fieldBinding.label.isRepeated && adapter is EnumAdapter) {
         val enumValue = fieldBinding.getEnumValue(value)
-        if (enumValue != -1 && enumValue != 0) {
+        if (enumValue != -1) {
           size += adapter.encodedSizeWithTag(fieldBinding.tag, enumValue)
         }
       } else {
@@ -68,16 +69,26 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
   override fun encode(writer: ProtoWriter, value: M) {
     for (fieldBinding in fieldBindings.values) {
       var binding = fieldBinding[value] ?: continue
-//      Log.i("RuntimeMessageAdapter", "encode " + fieldBinding.name + " , " + fieldBinding.tag +
-//          ", " + binding)
+      if (WireLog.debugLogLevel > 3) {
+        Log.d("RuntimeMessageAdapter", "encode messageType: ${messageType}, fieldBinding.name: ${fieldBinding.name}, " +
+            "fieldBinding.tag: ${fieldBinding.tag}, fieldBinding.builderType: ${fieldBinding.builderType}" +
+            "binding: ${binding}")
+      }
       val adapter = if (fieldBinding.isMap) {
         fieldBinding.adapter()
       } else {
         fieldBinding.singleAdapter()
       }
-      if (adapter is EnumAdapter) {
+      if (WireLog.debugLogLevel > 3) {
+        Log.d("RuntimeMessageAdapter", "encode messageType: ${messageType}," +
+            " fieldBinding.name: ${fieldBinding.name}, " +
+            "adapter: ${adapter}, " +
+            "fieldBinding.redacted: ${fieldBinding.redacted}, " +
+            "fieldBinding.label: ${fieldBinding.label}")
+      }
+      if (!fieldBinding.label.isRepeated && adapter is EnumAdapter) {
         val enumValue = fieldBinding.getEnumValue(value)
-        if (enumValue != -1 && enumValue != 0) {
+        if (enumValue != -1) {
           adapter.encodeWithTag(writer, fieldBinding.tag, enumValue)
         }
       } else {
@@ -148,6 +159,12 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       if (tag == -1) break
       val fieldEncoding = reader.peekFieldEncoding()!!
       val fieldBinding = fieldBindings[tag]
+      if (WireLog.debugLogLevel > 3) {
+        Log.d("RuntimeMessageAdapter", "decode messageType: ${messageType}," +
+            " fieldBinding?.name: ${fieldBinding?.name}," +
+            " fieldBinding?.tag: ${fieldBinding?.tag}, fieldBinding?.builderType: ${fieldBinding?.builderType}, " +
+            "tag: ${tag}, fieldEncoding: ${fieldEncoding}, fieldBindings: ${fieldBindings}")
+      }
       try {
         if (fieldBinding != null) {
           isDefault = false
@@ -167,30 +184,84 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
               value = adapter.decode(reader)
             }
           } catch (stateE: ProtocolStateException) {
-            Log.e("RuntimeMessageAdapter", fieldBinding.name + " , tag = " + tag + " , adapter" +
-                " ， fieldBinding.label " + fieldBinding.label +
-                ".fieldEncoding =" +
-                "" + adapter.fieldEncoding + " , fieldEncoding = " + fieldEncoding)
+            if (WireLog.debugLogLevel > 0) {
+              Log.e("RuntimeMessageAdapter", "decode 1 ProtocolStateException messageType: ${messageType}, " +
+                  "fieldBinding.name: ${fieldBinding?.name}, " +
+                  "tag: ${tag}, " +
+                  "fieldBinding.label: ${fieldBinding?.label}, adapter.fieldEncoding: ${adapter.fieldEncoding}, " +
+                  "value: ${value}, " +
+                  "fieldEncoding: ${fieldEncoding}")
+            }
+            if (WireLog.debugLogLevel > 0) {
+              stateE.printStackTrace()
+            }
             reader.readUnknownField(tag)
             continue@loop
+          } catch (e: Exception) {
+            if (WireLog.debugLogLevel > 0) {
+              Log.e("RuntimeMessageAdapter", "decode 1 Exception " +
+                  "messageType: ${messageType}, " +
+                  "fieldBinding.name: ${fieldBinding?.name}," +
+                  " fieldBinding?.builderType: ${fieldBinding?.builderType}" +
+                  "fieldBinding.label: ${fieldBinding?.label}, " +
+                  " tag: ${tag}, " +
+                  "fieldEncoding: ${fieldEncoding}")
+            }
+            if (WireLog.debugLogLevel > 0) {
+              e.printStackTrace()
+            }
+            throw e
           }
 
           if (value != null) {
             fieldBinding.value(builder, value!!)
             if (value is Message<*, *>) {
-              setDefaultFalse(value)
+//              setDefaultFalse(value, false)
             }
           } else {
             fieldBinding.defaultValue(builder)
           }
           tags.add(tag)
+          if (WireLog.debugLogLevel > 3) {
+            Log.d("RuntimeMessageAdapter", "decode finish  messageType: ${messageType}, " +
+                "fieldBinding.name: ${fieldBinding?.name}, " +
+                "tag: ${tag}, " +
+                "fieldBinding.label: ${fieldBinding?.label}, adapter.fieldEncoding: ${adapter.fieldEncoding}, " +
+                "value: ${value}, " +
+                "fieldEncoding: ${fieldEncoding}")
+          }
         } else {
           val value = fieldEncoding.rawProtoAdapter().decode(reader)
           builder.addUnknownField(tag, fieldEncoding, value)
         }
       } catch (e: EnumConstantNotFoundException) {
         // An unknown Enum value was encountered, store it as an unknown field.
+        if (WireLog.debugLogLevel > 0) {
+          Log.e("RuntimeMessageAdapter", "decode 2 EnumConstantNotFoundException " +
+              "messageType: ${messageType}, fieldBinding.name: ${fieldBinding?.name}," +
+              " fieldBinding?.builderType: ${fieldBinding?.builderType}" +
+              "fieldBinding.label: ${fieldBinding?.label}, " +
+              " tag: ${tag}, " +
+              "fieldEncoding: ${fieldEncoding}")
+        }
+        if (WireLog.debugLogLevel > 0) {
+          e.printStackTrace()
+        }
         builder.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
+      } catch (e: Exception) {
+        if (WireLog.debugLogLevel > 0) {
+          Log.e("RuntimeMessageAdapter", "decode 2 Exception " +
+              "messageType: ${messageType}, " +
+              "fieldBinding.name: ${fieldBinding?.name}," +
+              " fieldBinding?.builderType: ${fieldBinding?.builderType}" +
+              "fieldBinding.label: ${fieldBinding?.label}, " +
+              " tag: ${tag}, " +
+              "fieldEncoding: ${fieldEncoding}")
+        }
+        if (WireLog.debugLogLevel > 0) {
+          e.printStackTrace()
+        }
+        throw e
       }
 
     }
@@ -201,6 +272,11 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
       if (field.returnDefaultValue && !tags.contains(field.tag)) {
         val binding = field.getFromBuilder(builder)
         if (binding == null) {
+          if (WireLog.debugLogLevel > 3) {
+            Log.d("RuntimeMessageAdapter", "decode defaultValue  messageType: ${messageType}, " +
+                "field: ${field}, " +
+                "tag: ${tag}, binding: ${binding}")
+          }
           field.defaultValue(builder)
         }
       }
@@ -208,18 +284,20 @@ class RuntimeMessageAdapter<M : Message<M, B>, B : Builder<M, B>>(
     // end
 
     val msg = builder.build()
-//    Log.i("RuntimeMessageAdapter", "" + messageType + " , isDefault = " + isDefault)
-    if (!isDefault) {
-      setDefaultFalse(msg)
+    if (WireLog.debugLogLevel > 2) {
+      Log.i("RuntimeMessageAdapter", "messageType = " + messageType + " , isDefault = " + isDefault)
+    }
+    if (isDefault) {
+      setDefaultInstanceFlag(msg, true)
     }
     return msg
   }
 
-  private fun setDefaultFalse(msg: Message<*, *>) {
+  private fun setDefaultInstanceFlag(msg: Message<*, *>, isDefault: Boolean) {
     try {
       val defaultInstanceField = msg::class.java.getDeclaredField("__isDefaultInstance")
       defaultInstanceField.isAccessible = true
-      defaultInstanceField.set(msg, false)
+      defaultInstanceField.set(msg, isDefault)
     } catch (e: Exception) {
       e.printStackTrace()
     }

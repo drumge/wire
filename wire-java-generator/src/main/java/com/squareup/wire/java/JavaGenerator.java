@@ -1431,7 +1431,10 @@ public final class JavaGenerator {
       // start 枚举类型构造汉函数赋值
       if (needEnumValue(field)) {
         String enumValueName = enumValueName(fieldName);
-        result.addStatement("this.$1L = $2L", enumValueName, enumValueName);
+        String enumAccessName = constructorTakesAllFields
+                ? enumValueName
+                : builderName + "." + enumValueName;
+        result.addStatement("this.$1L = $2L", enumValueName, enumAccessName);
       }
       // end
     }

@@ -109,6 +109,9 @@ class Field private constructor(
     if (isExtension && isRequired) {
       linker.addError("extension fields cannot be required", type!!)
     }
+    if (type == null) {
+      System.out.println("chenrenzhan-1  name " + name + ", label " + label)
+    }
     linker.validateImport(location, type!!)
   }
 

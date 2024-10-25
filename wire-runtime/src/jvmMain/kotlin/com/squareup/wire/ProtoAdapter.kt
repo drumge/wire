@@ -144,6 +144,10 @@ actual abstract class ProtoAdapter<E> actual constructor(
       return RuntimeEnumAdapter(type)
     }
 
+//    @JvmStatic fun <E : WireEnum> newEnumAdapter(type: Class<E>): RuntimeEnumAdapter<E> {
+//      return RuntimeEnumAdapter(type)
+//    }
+
     /** Returns the adapter for the type of `Message`. */
     @JvmStatic fun <M : Message<*, *>> get(message: M): ProtoAdapter<M> {
       return get(message.javaClass)

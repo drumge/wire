@@ -32,7 +32,7 @@ import java.util.Locale
 class FieldBinding<M : Message<M, B>, B : Message.Builder<M, B>> internal constructor(
   wireField: WireField,
   private val messageField: Field,
-  private val builderType: Class<B>
+  val builderType: Class<B>
 ) {
   val label: WireField.Label = wireField.label
   val name: String = messageField.name
